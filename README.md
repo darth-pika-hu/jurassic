@@ -1,10 +1,30 @@
 # [Jurassic Systems](http://www.jurassicsystems.com)
+
 HTML5/JavaScript recreation of the original Jurassic Park movie computer system.
 
-## About Repo
-This project started out as a much smaller joke that got out of hand, so the implementation may not have lead to the most extensible of code bases. That being said, adding terminal commands, at least, should be fairly straight forward using the `addCommand` method in [jurassicSystems.js](https://github.com/tojrobinson/jurassicsystems.com/blob/master/static/js/jurassicSystems.js).
+## Development
+
+This repository now ships modern JavaScript modules built with [esbuild](https://esbuild.github.io/). Source files live under `src/` and are compiled into hashed assets in `static/js/dist/`.
+
+```bash
+npm install
+npm run build
+```
+
+Run the access command unit tests with:
+
+```bash
+npm test
+```
+
+ESLint is available to keep contributions consistent:
+
+```bash
+npm run lint
+```
 
 ## License
+
 The MIT License (MIT)
 
 Copyright (c) 2014 Tully Robinson

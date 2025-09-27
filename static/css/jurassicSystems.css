@@ -8,6 +8,18 @@ body {
    height: 100%;
 }
 
+.sr-only {
+   position: absolute;
+   width: 1px;
+   height: 1px;
+   padding: 0;
+   margin: -1px;
+   overflow: hidden;
+   clip: rect(0, 0, 0, 0);
+   white-space: nowrap;
+   border: 0;
+}
+
 #environment {
    position: relative;
 }
@@ -182,9 +194,7 @@ body {
 }
 
 .command-history, .command-input, .entered-command {
-   white-space: pre;
    white-space: pre-wrap;
-   white-space: -moz-pre-wrap;
 }
 
 #chess-terminal {

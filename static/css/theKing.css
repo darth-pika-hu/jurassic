@@ -6,10 +6,6 @@ body {
    background: black;
 }
 
-#environment {
-   position: relative;
-}
-
 #home-key {
    position: fixed;
    bottom: 10px;
@@ -52,6 +48,10 @@ body {
    z-index: 64000;
 }
 
+#the-king-animation video {
+   display: block;
+}
+
 #the-king-blur {
    background-image: url('/img/theKingBlur.jpg');
    width: 600px;
@@ -62,15 +62,6 @@ body {
    opacity: 0;
 }
 
-#king-animation {
-   margin: 50px;
-   z-index: 50000;
-}
-
-#king-swf {
-   z-index: 64000;
-}
-
 #mac-hd-window {
    width: 556px;
    height: 566px;
@@ -78,7 +69,7 @@ body {
    background-repeat: no-repeat;
    position: absolute;
    left: 15px;
-   top: 100px
+   top: 100px;
 }
 
 .mac-window {
