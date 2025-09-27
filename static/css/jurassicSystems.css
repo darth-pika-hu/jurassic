@@ -71,6 +71,7 @@ body {
 .irix-window,
 .mac-window {
   position: relative;
+  box-sizing: content-box;
 }
 
 .irix-window a {
