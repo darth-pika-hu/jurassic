@@ -113,6 +113,80 @@ if (theKingWindow) {
   setupDraggable(theKingWindow);
 }
 
+function attemptVideoPlayback(video) {
+  if (!video) {
+    return;
+  }
+
+  const tryPlay = () => {
+    const result = video.play();
+    if (!result || typeof result.then !== 'function') {
+      return Promise.resolve();
+    }
+    return result;
+  };
+  let recovered = false;
+  const gestureHandlers = new Map();
+
+  video.muted = false;
+
+  const onUserGesture = () => {
+    if (recovered) {
+      return;
+    }
+    gestureHandlers.forEach((handler, eventName) => {
+      window.removeEventListener(eventName, handler);
+    });
+    gestureHandlers.clear();
+    video.muted = false;
+    tryPlay()
+      .then(() => {
+        recovered = true;
+      })
+      .catch(() => {
+        video.muted = true;
+        bindGestureRecovery();
+      });
+  };
+
+  const bindGestureRecovery = () => {
+    if (recovered) {
+      return;
+    }
+    ['pointerdown', 'keydown'].forEach(eventName => {
+      if (gestureHandlers.has(eventName)) {
+        return;
+      }
+      const handler = () => {
+        onUserGesture();
+      };
+      gestureHandlers.set(eventName, handler);
+      window.addEventListener(eventName, handler);
+    });
+  };
+
+  tryPlay()
+    .then(() => {
+      if (video.muted) {
+        video.muted = false;
+        tryPlay().catch(() => {
+          video.muted = true;
+          bindGestureRecovery();
+        });
+      }
+    })
+    .catch(() => {
+      video.muted = true;
+      tryPlay()
+        .then(() => {
+          bindGestureRecovery();
+        })
+        .catch(() => {
+          bindGestureRecovery();
+        });
+    });
+}
+
 window.setTimeout(() => {
   if (macHdWindow) {
     macHdWindow.style.backgroundImage = 'url(/img/macHDBlur.jpg)';
@@ -122,13 +196,9 @@ window.setTimeout(() => {
     bringToFront(theKingWindow);
   }
   if (theKingVideo) {
-    const playPromise = theKingVideo.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {
-        theKingVideo.muted = true;
-        theKingVideo.play().catch(() => {});
-      });
-    }
+    theKingVideo.autoplay = true;
+    theKingVideo.setAttribute('autoplay', '');
+    attemptVideoPlayback(theKingVideo);
   }
 }, 2500);
 
