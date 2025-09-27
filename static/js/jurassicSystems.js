@@ -182,7 +182,7 @@ function buildCommandLine(line) {
   if (command) {
     command.execute(createCommandContext(line));
   } else if (commandName) {
-    appendTextLine(`${commandName}: command not found`);
+    appendTextLine(`${commandName}: command not found. Type "help".`);
   }
 
   scrollMain();
