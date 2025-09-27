@@ -1,160 +1,133 @@
 body {
-   font-family: 'Open Sans';
-   color: #454545;
-}
-
-.twitter-share-button { vertical-align:top }
-
-.credits {
-   display: inline-block;
-   height: 50px;
-   line-height: 105px;
-   vertical-align: bottom;
-}
-
-.social {
-   float: right;
-}
-
-hr {
-   margin-top: 5px;
-   margin-bottom: 5px;
-   border: 0;
-   border-top: 1px solid #eeeeee;
+  font-family: 'Open Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #454545;
+  margin: 0;
+  background: #fff;
 }
 
 a {
-   text-decoration: none;
-   color: #164cc6;
+  text-decoration: none;
+  color: #164cc6;
 }
 
-a:hover {
-   text-decoration: underline;
+a:hover,
+a:focus-visible {
+  text-decoration: underline;
 }
 
-h1,h2, h3 {
-   margin: 0px;
+h1,
+h2,
+h3 {
+  margin: 0;
 }
 
-input[type="button"], button {
-   border:0 none;
-   font:inherit;
+p {
+  line-height: 1.5;
 }
 
-*:focus{outline:0 none;}
-
-input[type="button"], button {-moz-box-sizing: content-box;}
-
-input[type="button"]::-moz-focus-inner, button::-moz-focus-inner { padding:0;border:0 none; }
-
-table  {
-   margin: 10px;
-}
-
-tr:hover {
-   background: #eeeeee;
-}
-
-td {
-   border: 1px solid #cccccc;
-}
-
-td,th {
-   padding: 5px;
-   padding-left: 20px;
-   padding-right: 20px;
-}
-
-.highlighted {
-   background: #eeeeee;
-}
-
-.button {
-   background-image:url("/img/buttonOverlay.png");
-   -moz-border-radius:5px;
-   -webkit-border-radius:5px;
-   border-radius:5px;
-   cursor:pointer;
-   display:inline-block;
-   line-height:1;
-   overflow:visible;
-   position:relative;
-   text-decoration:none;
-   width:auto;
-   text-align:center;
-   background-color:#FFFFFF;
-   border:1px solid #CCCCCC;
-   color:#666666 !important;
-   font-weight:normal;
-   font-size:14px;
-   font-family: 'Arial';
-   text-shadow:0 1px 1px #FFFFFF;
-   padding:5px 10px;
-   margin: 2px;
+hr {
+  margin-top: 5px;
+  margin-bottom: 5px;
+  border: 0;
+  border-top: 1px solid #eee;
 }
 
 .container {
-   width: 80%;
-   max-width: 850px;
-   min-width: 350px;
-   margin-left: auto;
-   margin-right: auto;
-   padding: 20px;
-   overflow: hidden;
-}
-
-.container:after {
-   clear: both;
-}
-
-.text-block {
-   text-align: left;
-   font-size: 17px;
+  width: 80%;
+  max-width: 850px;
+  min-width: 320px;
+  margin: 0 auto;
+  padding: 20px;
+  box-sizing: border-box;
 }
 
 .center-justify {
-   text-align: center;
+  text-align: center;
+  position: relative;
 }
 
-.inline {
-   float: left;
-   margin: 10px;
+.text-block {
+  text-align: left;
+  font-size: 17px;
 }
 
-#main-banner {
-   width: 70%;
-   max-width: 560px;
+.credits {
+  margin-top: 10px;
 }
 
-#github-banner {
-   position: absolute;
-   left: 0;
-   top: 0;
-   border: none;
+.social {
+  margin-top: 20px;
 }
 
-#action-frame {
-   margin-top: 10px;
-   margin-left: auto;
-   margin-right: auto;
-   overflow: hidden;
-   width: 850px;
-   padding: 10px;
+ul {
+  padding-left: 20px;
+}
+
+.table-container {
+  overflow-x: auto;
+}
+
+table {
+  margin: 10px 0;
+  border-collapse: collapse;
+  width: auto;
+}
+
+tr:hover {
+  background: #eee;
+}
+
+td,
+th {
+  border: 1px solid #ccc;
+  padding: 5px 20px;
+}
+
+.highlighted {
+  background: #eee;
+}
+
+.button {
+  background-image: url('/img/buttonOverlay.png');
+  border-radius: 5px;
+  cursor: pointer;
+  display: inline-block;
+  line-height: 1;
+  text-decoration: none;
+  background-color: #fff;
+  border: 1px solid #ccc;
+  color: #666 !important;
+  font-weight: normal;
+  font-size: 14px;
+  font-family: 'Arial', sans-serif;
+  text-shadow: 0 1px 1px #fff;
+  padding: 7px 16px;
+  margin: 2px;
+}
+
+.button:focus-visible {
+  outline: 2px solid #5fde5f;
+  outline-offset: 2px;
 }
 
 .img {
-   padding: 10px;
+  padding: 10px;
 }
 
-#launch-button {
-   height: 315px;
-   line-height: 515px;
-   text-align: center;
-   vertical-align: center;
-   margin-left: 50px;
+.img img {
+  max-width: 100%;
+  height: auto;
+  display: block;
 }
 
-#launch-button:hover {
-   opacity: 0.7;
-   cursor: pointer;
+#main-banner {
+  width: 70%;
+  max-width: 560px;
+}
+
+#github-banner {
+  position: absolute;
+  left: 0;
+  top: 0;
+  border: 0;
 }

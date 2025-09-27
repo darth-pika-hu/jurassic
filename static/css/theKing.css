@@ -1,99 +1,103 @@
 body {
-   overflow-x: hidden;
-   overflow-y: scroll;
-   padding: 0px;
-   margin: 0px;
-   background: black;
-}
-
-#environment {
-   position: relative;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+  margin: 0;
+  background: #000;
+  color: #ccc;
 }
 
 #home-key {
-   position: fixed;
-   bottom: 10px;
-   right: 10px;
-   opacity: 0.7;
+  position: fixed;
+  bottom: 10px;
+  right: 10px;
+  opacity: 0.7;
+  display: inline-block;
 }
 
+#home-key img {
+  display: block;
+  border: 0;
+}
+
+#home-key:focus-visible,
 #home-key:hover {
-   opacity: 1;
+  opacity: 1;
+  outline: 2px solid #5fde5f;
+  outline-offset: 4px;
 }
 
 #apple-desktop {
-   background-image: url("/img/appleBackground.jpg");
-   background-repeat: no-repeat;
-   overflow: hidden;
-   margin-left: 10px;
-   margin-top: 10px;
-   position: absolute;
-   width: 1124px;
-   height: 850px;
-   border-radius: 10px;
-}
-
-#the-king-window {
-   display: none;
-   background-image: url('/img/theKingFocus.jpg');
-   background-repeat: no-repeat;
-   width: 600px;
-   height: 620px;
-   position: absolute;
-   left: 50px;
-   top: 130px;
-   text-align: center;
-}
-
-#the-king-animation {
-   position: absolute;
-   top: 40px;
-   left: 80px;
-   z-index: 64000;
-}
-
-#the-king-blur {
-   background-image: url('/img/theKingBlur.jpg');
-   width: 600px;
-   height: 620px;
-   position: absolute;
-   top: 0;
-   left: 0;
-   opacity: 0;
-}
-
-#king-animation {
-   margin: 50px;
-   z-index: 50000;
-}
-
-#king-swf {
-   z-index: 64000;
+  background-image: url('/img/appleBackground.jpg');
+  background-repeat: no-repeat;
+  overflow: hidden;
+  margin-left: 10px;
+  margin-top: 10px;
+  position: relative;
+  width: 1124px;
+  height: 850px;
+  border-radius: 10px;
 }
 
 #mac-hd-window {
-   width: 556px;
-   height: 566px;
-   background-image: url("/img/macHDFocus.jpg");
-   background-repeat: no-repeat;
-   position: absolute;
-   left: 15px;
-   top: 100px
+  width: 556px;
+  height: 566px;
+  background-image: url('/img/macHDFocus.jpg');
+  background-repeat: no-repeat;
+  position: absolute;
+  left: 15px;
+  top: 100px;
 }
 
 .mac-window {
-   position: relative;
+  position: relative;
+  outline: none;
+}
+
+.mac-window:focus-visible {
+  outline: 2px solid #5fde5f;
+  outline-offset: 4px;
 }
 
 .window-bar {
-   position: absolute;
-   top: 0;
-   left: 0;
-   height: 30px;
-   width: 100%;
-   z-index: 1000;
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 30px;
+  width: 100%;
+  cursor: move;
+  z-index: 1000;
 }
 
 .dragging {
-   cursor: move;
+  cursor: move;
+}
+
+#the-king-window {
+  display: none;
+  background-image: url('/img/theKingFocus.jpg');
+  background-repeat: no-repeat;
+  width: 600px;
+  height: 620px;
+  position: absolute;
+  left: 50px;
+  top: 130px;
+  text-align: center;
+}
+
+#the-king-video {
+  position: absolute;
+  top: 40px;
+  left: 80px;
+}
+
+#the-king-blur {
+  background-image: url('/img/theKingBlur.jpg');
+  width: 600px;
+  height: 620px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  opacity: 0;
+  display: none;
 }
