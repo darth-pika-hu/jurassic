@@ -7,4 +7,4 @@
 - Added tolerant `access` command detection with automated tests.
 - Upgraded supporting pages to share the modern font stack and removed unused libraries.
 - Simplified the standalone “The King” experience with HTML5 video and vanilla interactions.
-- Ensured "The King" standalone page restores audio automatically, even when opened directly.
+- Hardened "The King" standalone page so its soundtrack resumes automatically on direct visits, even when browsers initially mute autoplay.
