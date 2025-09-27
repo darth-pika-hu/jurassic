@@ -1,0 +1,25 @@
+{
+  "name": "jurassic",
+  "version": "1.0.0",
+  "description": "Modernized Jurassic Systems control panel.",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "format": "prettier --check .",
+    "test": "vitest run"
+  },
+  "keywords": [
+    "jurassic",
+    "control",
+    "terminal"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@vitest/ui": "^3.2.4",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.6.2",
+    "vitest": "^3.2.4"
+  }
+}

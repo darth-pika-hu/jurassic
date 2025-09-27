@@ -1,75 +1,106 @@
-(function($) {
-   $.ajax({
-      url : '/swf/theKing.swf'
-   });
+const preloadImages = ['theKingBlur.jpg', 'macHDBlur.jpg', 'macHDFocus.jpg'];
 
-   $(['theKingBlur.jpg',
-      'macHDBlur.jpg',
-      'macHDFocus.jpg']).each(function() {
-         $('<img />')[0].src = '/img/' + this;
-      });
+const cacheImages = () => {
+  preloadImages.forEach((src) => {
+    const image = new Image();
+    image.src = `/img/${src}`;
+  });
+};
 
-   (function() {
-      var diffX = 0;
-      var diffY = 0;
+const initDragging = () => {
+  const bars = document.querySelectorAll('.window-bar');
+  let dragState = null;
 
-      $('.window-bar').mousedown(function(e) {
-         var dragging = $(this).parent()
-                               .addClass('dragging');
-         diffY = e.pageY - dragging.offset().top;
-         diffX = e.pageX - dragging.offset().left;
-      });
+  const startDrag = (event) => {
+    const bar = event.currentTarget;
+    const windowElement = bar.parentElement;
+    if (!windowElement) {
+      return;
+    }
 
-      $('body').mousemove(function(e) {
-         $('.dragging').offset({
-            top: e.pageY - diffY,
-            left: e.pageX - diffX 
-         });
-      });
-   }());
+    const rect = windowElement.getBoundingClientRect();
+    dragState = {
+      pointerId: event.pointerId,
+      element: windowElement,
+      offsetX: event.clientX - rect.left,
+      offsetY: event.clientY - rect.top,
+    };
 
-   $('body').mouseup(function(e) {
-      $('.dragging').removeClass('dragging');
-   });
+    windowElement.classList.add('dragging');
+    bar.setPointerCapture(event.pointerId);
+  };
 
-   $('#the-king-window').ready(function() {
-      setTimeout(function() {
-         $('#mac-hd-window').css('background-image', 'url(/img/macHDBlur.jpg)');
-         $('#the-king-window').show();
+  const onPointerMove = (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) {
+      return;
+    }
 
-         if ($(window).width() < 1200) {
-            setTimeout(function() {
-               $('#home-key').css('z-index', '64000');
-            }, 10000);
-         }
+    const { element, offsetX, offsetY } = dragState;
+    element.style.left = `${event.clientX - offsetX}px`;
+    element.style.top = `${event.clientY - offsetY}px`;
+  };
 
-      }, 2500);
-   });
+  const stopDrag = (event) => {
+    if (!dragState || event.pointerId !== dragState.pointerId) {
+      return;
+    }
 
-   var flicker = function(altId, interval, duration) {
-      var visible = true,
-          alt = $('#' + altId),
-          flickering = setInterval(function() {
-             if (visible) {
-                alt.css('opacity', '1');
-             } else {
-                alt.css('opacity', '0');
-             }
+    const bar = dragState.element.querySelector('.window-bar');
+    if (bar) {
+      bar.releasePointerCapture(event.pointerId);
+    }
+    dragState.element.classList.remove('dragging');
+    dragState = null;
+  };
 
-             visible = !visible;
-          }, interval);
+  bars.forEach((bar) => {
+    bar.addEventListener('pointerdown', startDrag);
+  });
 
-      setTimeout(function() {
-         clearInterval(flickering);
-         alt.css('opacity', '0');
-      }, duration);
-   }
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', stopDrag);
+  window.addEventListener('pointercancel', stopDrag);
+};
 
-   $('#apple-desktop').click(function(e){
-      var isKing = $(e.target).closest('#the-king-window').length;
+const init = () => {
+  cacheImages();
+  initDragging();
 
-      if (!isKing) {
-         flicker('the-king-blur', 50, 450);
-      }
-   });
-}(jQuery));
+  const macHd = document.getElementById('mac-hd-window');
+  const kingWindow = document.getElementById('the-king-window');
+  const kingBlur = document.getElementById('the-king-blur');
+  const homeKey = document.getElementById('home-key');
+  const video = document.getElementById('the-king-video');
+
+  window.setTimeout(() => {
+    if (macHd) {
+      macHd.style.backgroundImage = "url('/img/macHDBlur.jpg')";
+    }
+    if (kingWindow) {
+      kingWindow.hidden = false;
+    }
+    if (video) {
+      video.play().catch(() => {});
+    }
+
+    if (window.innerWidth < 1200 && homeKey) {
+      window.setTimeout(() => {
+        homeKey.style.zIndex = '64000';
+      }, 10000);
+    }
+  }, 2500);
+
+  document.getElementById('apple-desktop')?.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+    if (!event.target.closest('#the-king-window') && kingBlur) {
+      kingBlur.style.opacity = '1';
+      window.setTimeout(() => {
+        kingBlur.style.opacity = '0';
+      }, 450);
+    }
+  });
+};
+
+window.addEventListener('DOMContentLoaded', init);

@@ -1,84 +1,100 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-   <title>Jurassic Error</title>
-   <head>
-      <link rel="icon" href="/favicon.ico">
-      <style>
-         ::-moz-selection {
-            background: #b3d4fc;
-            text-shadow: none;
-         }
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Jurassic Error</title>
+    <link rel="icon" href="/favicon.ico" />
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      }
 
-         ::selection {
-            background: #b3d4fc;
-            text-shadow: none;
-         }
+      * {
+        box-sizing: border-box;
+      }
 
-         html {
-            font-size: 20px;
-            line-height: 1.4;
-            color: #737373;
-            -webkit-text-size-adjust: 100%;
-            -ms-text-size-adjust: 100%;
-         }
+      ::selection {
+        background: #b3d4fc;
+        text-shadow: none;
+      }
 
-         html,
-         input {
-            font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-         }
+      body {
+        margin: 0;
+        font-size: 20px;
+        line-height: 1.4;
+        color: #737373;
+        background: #fff;
+      }
 
-         h1 {
-            margin: 0 10px;
-            font-size: 50px;
-            text-align: center;
-         }
+      h1 {
+        margin: 0 10px;
+        font-size: 50px;
+        text-align: center;
+      }
 
-         h1 span {
-            color: #bbb;
-         }
+      h1 span {
+        color: #bbb;
+      }
 
-         h3 {
-            margin: 1.5em 0 0.5em;
-         }
+      h3 {
+        margin: 1.5em 0 0.5em;
+      }
 
-         p {
-            margin: 1em 0;
-         }
+      p {
+        margin: 1em 0;
+      }
 
+      .error-box {
+        margin: 75px auto;
+        text-align: center;
+        padding: 20px;
+        max-width: 720px;
+      }
 
-         input::-moz-focus-inner {
-            padding: 0;
-            border: 0;
-         }
-         .error-box {
-            margin: auto;
-            margin-top: 75px;
-            text-align: center;
-            padding: 20px;
-         }
+      .error-message {
+        margin: 30px;
+        font-size: 40px;
+        font-weight: 700;
+        color: #3f635e;
+      }
 
-         .error-message {
-            margin: 30px;
-            font-size: 40px;
-            font-weight: 700;
-            color: #3f635e;
-         }
+      .error-body {
+        margin: auto;
+        max-width: 700px;
+      }
 
-         .error-body {
-            margin: auto;
-            max-width:700px;
-         }
+      a {
+        color: #164cc6;
+        text-decoration: none;
+      }
 
-         a {
-            text-decoration: none;
-         }
-      </style>
-   </head>
-   <body>
-      <div class="error-box">
-         <img src="/img/dennisNoGlasses.jpg" />
-         <div class="error-message">My glasses... I can't see without my glasses!</div>
-         <div class="error-body">You have taken a wrong turn or failed to stay in the jeep. Please return to the <a href="/about">home page</a> at once.</div>
+      a:focus-visible,
+      a:hover {
+        text-decoration: underline;
+      }
+
+      img {
+        max-width: 100%;
+        height: auto;
+        display: block;
+        margin: 0 auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="error-box">
+      <img
+        src="/img/dennisNoGlasses.jpg"
+        alt="Dennis Nedry without glasses"
+        loading="lazy"
+      />
+      <div class="error-message">My glasses... I can't see without my glasses!</div>
+      <div class="error-body">
+        You have taken a wrong turn or failed to stay in the jeep. Please return to the
+        <a href="/about">home page</a> at once.
       </div>
-   </body>
+    </div>
+  </body>
 </html>
