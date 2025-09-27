@@ -1,13 +1,7 @@
 (function($) {
-   $.ajax({
-      url : '/swf/theKing.swf'
+   ['theKingBlur.jpg', 'macHDBlur.jpg', 'macHDFocus.jpg'].forEach(function(image) {
+      $('<img />')[0].src = '/img/' + image;
    });
-
-   $(['theKingBlur.jpg',
-      'macHDBlur.jpg',
-      'macHDFocus.jpg']).each(function() {
-         $('<img />')[0].src = '/img/' + this;
-      });
 
    (function() {
       var diffX = 0;
@@ -18,17 +12,24 @@
                                .addClass('dragging');
          diffY = e.pageY - dragging.offset().top;
          diffX = e.pageX - dragging.offset().left;
+         e.preventDefault();
       });
 
       $('body').mousemove(function(e) {
-         $('.dragging').offset({
+         var dragging = $('.dragging');
+
+         if (!dragging.length) {
+            return;
+         }
+
+         dragging.offset({
             top: e.pageY - diffY,
-            left: e.pageX - diffX 
+            left: e.pageX - diffX
          });
       });
    }());
 
-   $('body').mouseup(function(e) {
+   $('body').mouseup(function() {
       $('.dragging').removeClass('dragging');
    });
 
@@ -37,12 +38,16 @@
          $('#mac-hd-window').css('background-image', 'url(/img/macHDBlur.jpg)');
          $('#the-king-window').show();
 
-         if ($(window).width() < 1200) {
-            setTimeout(function() {
-               $('#home-key').css('z-index', '64000');
-            }, 10000);
-         }
+         var kingVideo = document.getElementById('the-king-video');
 
+         if (kingVideo) {
+            kingVideo.currentTime = 0;
+            var playPromise = kingVideo.play();
+
+            if (playPromise && typeof playPromise.catch === 'function') {
+               playPromise.catch(function() {});
+            }
+         }
       }, 2500);
    });
 

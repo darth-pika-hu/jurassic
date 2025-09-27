@@ -1,39 +1,26 @@
 <!DOCTYPE html>
-<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
-<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
-<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
-<!--[if gt IE 8]><!--> <html class="no-js"> <!--<![endif]-->
+<html class="no-js" lang="en">
 <head>
    <meta charset="utf-8">
    <meta http-equiv="X-UA-Compatible" content="IE=edge">
-   <meta name="description" content="">
    <meta name="viewport" content="width=device-width, initial-scale=1">
 
    <title>Jurassic Systems</title>
 
+   <link rel="preconnect" href="https://fonts.googleapis.com">
+   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
    <link rel="stylesheet" href="/css/normalize.css">
    <link rel="icon" href="/favicon.ico">
    <link rel="stylesheet" href="/css/jurassicSystems.css">
-   <script src="/js/lib/modernizr.js"></script>
 </head>
 <body>
-   <!--[if lt IE 7]>
-   <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
-   <![endif]-->
-<div id="home-key"><a href="/about"><img src="/img/homeKey.jpg" /></a></div>
-<div id="irix-boot"><img id="boot-dialogue" src="/img/irixBoot.gif"></img></div>
-<div id="intro">
-   <div class="view-cover"></div>
-   <div id="intro-box">
-      <iframe id="intro-scene" width="560" height="315" src="https://www.youtube.com/embed/RfiQYRn7fBg?showinfo=0" frameborder="0" allowfullscreen=""></iframe>
-      <div id="intro-text">Watch the above scene from Jurassic Park, then hold on to your butts and press continue to launch the recreation. Type <strong>"help"</strong> into the console to see a list of commands.</div><div id="intro-divider"></div><div id="continue-button"><img src="/img/continueButton.png"></div>
-   </div>
-</div>
-<div id="environment">
+<div id="irix-boot"><img id="boot-dialogue" src="/img/irixBoot.gif" alt="IRIX boot sequence"></div>
+<main id="environment" role="main">
    <div id="irix-desktop">
-      <div class="irix-window" id="main-terminal" style="z-index: 2">
+      <div class="irix-window" id="main-terminal" style="z-index: 2" role="region" aria-label="Central Park Control Console">
          <div class="window-bar"></div>
-         <input type="text" class="buffer" id="main-buffer" autocomplete="off">
+         <input type="text" class="buffer" id="main-buffer" autocomplete="off" aria-label="Console command input">
          <div class="inner-wrap" id="main-inner">
             <div class="terminal-view">
                <div class="console-preabmle">
@@ -41,7 +28,7 @@
                   Version 4.0.5, Alpha E<br>
                   Ready...<br>
                </div>
-               <div id="main-input" class="command-history"></div>
+               <div id="main-input" class="command-history" role="log" aria-live="polite" aria-label="Console output"></div>
                <span id="main-prompt">></span>
                <span class="command-input" id="curr-main-input"></span><span id="main-cursor" class="cursor">&nbsp;</span>
             </div>
@@ -56,9 +43,9 @@
          <div class="window-bar"></div>
       </div>
 
-      <div class="irix-window" id="chess-terminal" style="z-index: 1">
+      <div class="irix-window" id="chess-terminal" style="z-index: 1" role="region" aria-label="Chess terminal">
          <div class="window-bar"></div>
-         <input type="text" class="buffer" id="chess-buffer" autocomplete="off">
+         <input type="text" class="buffer" id="chess-buffer" autocomplete="off" aria-label="Chess terminal input">
          <div class="inner-wrap" id="chess-inner">
             <div class="terminal-view">
                <div class="console-preabmle">
@@ -148,7 +135,7 @@
                   <div class="chess-line">Enter Level: 1</div>
                   <div class="chess-line">Illegal move</div>
                </div>
-               <div class="command-history"></div>
+               <div class="command-history" role="log" aria-live="polite" aria-label="Chess output"></div>
                <span class="command-input" id="curr-chess-input"></span><span id="chess-cursor" class="cursor">&nbsp;</span>
             </div>
          </div>
@@ -166,9 +153,8 @@
       <div id="the-king-blur"></div>
       </div>
    </div>
-</div>
+</main>
    <script src="/js/lib/jquery.js"></script>
-   <script src="/js/lib/soundmanager2-nodebug-jsmin.js"></script>
-   <script src="/js/jurassicSystems.js"></script>
+   <script type="module" src="/js/jurassicSystems.js"></script>
 </body>
 </html>
