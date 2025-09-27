@@ -19,8 +19,6 @@ const macHdWindow = document.getElementById('mac-hd-window');
 const theKingWindow = document.getElementById('the-king-window');
 const theKingVideo = document.getElementById('the-king-video');
 const theKingBlur = document.getElementById('the-king-blur');
-const bootOverlay = document.getElementById('irix-boot');
-
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const env = {
@@ -715,9 +713,8 @@ function init() {
   ]);
 
   window.setTimeout(() => {
-    bootOverlay?.remove();
     mainBuffer?.focus({ preventScroll: true });
-  }, 4500);
+  }, 0);
 }
 
 init();

@@ -28,24 +28,6 @@ body {
   min-height: 100vh;
 }
 
-#irix-boot {
-  position: absolute;
-  top: 10px;
-  left: 50%;
-  width: 1124px;
-  height: 850px;
-  background: #6ba1d8;
-  transform: translateX(-50%);
-  z-index: 60000;
-}
-
-#boot-dialogue {
-  position: absolute;
-  left: 50%;
-  top: 200px;
-  transform: translateX(-50%);
-}
-
 #irix-desktop {
   position: relative;
   background-image: url('/img/irixBackground.jpg');
