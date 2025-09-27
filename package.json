@@ -1,0 +1,9 @@
+{
+  "name": "jurassic-systems",
+  "version": "1.0.0",
+  "description": "Modernized Jurassic Systems static site",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}

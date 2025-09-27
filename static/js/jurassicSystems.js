@@ -1,350 +1,514 @@
-(function($, sm) {
-  const jpTerminal = (function() {
-    const env = {
-      accessAttempts: 0,
-      active: null,
-      commands: {},
-      maxIndex: 1,
-      musicOn: false,
-      sounds: {},
-    };
-    const api = {};
+import { isAccessCommandName } from './commandMatchers.js';
 
-    api.buildCommandLine = function(line) {
-      const commandName = line.trim().split(/ /)[0];
-      const command =
-        env.commands[commandName] &&
-        env.commands[commandName].command;
+const createAudio = (sources, { loop = false } = {}) => {
+  const audio = document.createElement('audio');
+  audio.preload = 'auto';
+  audio.loop = loop;
 
-      env.active.find('.command-history')
-        .append($('<div class="entered-command">')
-        .text('> ' + line));
+  sources.forEach(({ src, type }) => {
+    const source = document.createElement('source');
+    source.src = src;
+    if (type) {
+      source.type = type;
+    }
+    audio.append(source);
+  });
 
-      if (command) {
-        command(env, line);
-      } else if (commandName) {
-        env.active.find('.command-history')
-          .append($('<div>').text(commandName + ': command not found'));
+  const play = () => {
+    try {
+      audio.currentTime = 0;
+      const result = audio.play();
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => {});
       }
+    } catch (error) {
+      // Ignore playback interruptions (e.g., autoplay restrictions)
+    }
+  };
+
+  const stop = () => {
+    audio.pause();
+    audio.currentTime = 0;
+  };
+
+  return { element: audio, play, stop };
+};
+
+const jpTerminal = (() => {
+  const env = {
+    accessAttempts: 0,
+    active: null,
+    commands: new Map(),
+    maxIndex: 10,
+    musicOn: false,
+    sounds: {},
+  };
+
+  const appendToActive = (value, { html = false } = {}) => {
+    const history = env.active?.querySelector('.command-history');
+    if (!history) {
+      return null;
     }
 
-    api.addCommand = function(details) {
-      if (
-        details.name &&
-        !env.commands.hasOwnProperty(details.name) &&
-        (details.command.constructor === Function)
-      ) {
-        env.commands[details.name] = details;
+    if (value instanceof Node) {
+      history.append(value);
+      scrollActive();
+      return value;
+    }
+
+    if (html) {
+      history.insertAdjacentHTML('beforeend', value);
+      scrollActive();
+      return history.lastElementChild;
+    }
+
+    history.append(value);
+    scrollActive();
+    return history.lastChild;
+  };
+
+  const scrollActive = () => {
+    const wrap = env.active?.querySelector('.inner-wrap');
+    if (wrap) {
+      wrap.scrollTop = wrap.scrollHeight;
+    }
+  };
+
+  const buildCommandLine = (line) => {
+    const trimmed = line.trim();
+    const commandNameRaw = trimmed.split(/\s+/)[0] || '';
+
+    const commandEntry = document.createElement('div');
+    commandEntry.className = 'entered-command';
+    commandEntry.textContent = `> ${line}`;
+    appendToActive(commandEntry);
+
+    if (!commandNameRaw) {
+      return;
+    }
+
+    const lowerName = commandNameRaw.toLowerCase();
+    let command = env.commands.get(lowerName);
+
+    if (!command) {
+      command = Array.from(env.commands.values()).find((candidate) =>
+        typeof candidate.matcher === 'function' && candidate.matcher(commandNameRaw)
+      );
+    }
+
+    if (command) {
+      command.execute(env, line, appendToActive);
+    } else {
+      const missing = document.createElement('div');
+      missing.textContent = `${commandNameRaw}: command not found`;
+      appendToActive(missing);
+    }
+  };
+
+  const addCommand = (details) => {
+    if (!details?.name || typeof details.execute !== 'function') {
+      return;
+    }
+
+    const key = details.name.toLowerCase();
+    if (env.commands.has(key)) {
+      return;
+    }
+
+    env.commands.set(key, details);
+  };
+
+  const setActive = (active) => {
+    if (!active) {
+      return;
+    }
+
+    env.active = active;
+  };
+
+  const getActive = () => env.active;
+
+  const nextIndex = () => {
+    env.maxIndex += 1;
+    return env.maxIndex;
+  };
+
+  const init = () => {
+    env.sounds.beep = createAudio([
+      { src: '/snd/beep.ogg', type: 'audio/ogg' },
+      { src: '/snd/beep.mp3', type: 'audio/mpeg' },
+      { src: '/snd/beep.wav', type: 'audio/wav' },
+    ]);
+
+    env.sounds.lockDown = createAudio([
+      { src: '/snd/lockDown.ogg', type: 'audio/ogg' },
+      { src: '/snd/lockDown.mp3', type: 'audio/mpeg' },
+      { src: '/snd/lockDown.wav', type: 'audio/wav' },
+    ]);
+
+    env.sounds.dennisMusic = createAudio([
+      { src: '/snd/dennisMusic.ogg', type: 'audio/ogg' },
+      { src: '/snd/dennisMusic.mp3', type: 'audio/mpeg' },
+      { src: '/snd/dennisMusic.wav', type: 'audio/wav' },
+    ], { loop: true });
+  };
+
+  return {
+    addCommand,
+    buildCommandLine,
+    getActive,
+    init,
+    nextIndex,
+    setActive,
+    appendToActive,
+    scrollActive,
+    env,
+  };
+})();
+
+const blurAllWindows = () => {
+  document.querySelectorAll('.cursor').forEach((cursor) => {
+    cursor.classList.remove('active-cursor');
+  });
+  document.querySelectorAll('.buffer').forEach((buffer) => buffer.blur());
+};
+
+const cacheImages = (paths) => {
+  paths.forEach((path) => {
+    const image = new Image();
+    image.src = path;
+  });
+};
+
+const flicker = (id, interval, duration) => {
+  const alt = document.getElementById(id);
+  if (!alt) {
+    return;
+  }
+
+  let visible = true;
+  alt.style.opacity = '1';
+
+  const flickering = window.setInterval(() => {
+    alt.style.opacity = visible ? '1' : '0';
+    visible = !visible;
+  }, interval);
+
+  window.setTimeout(() => {
+    window.clearInterval(flickering);
+    alt.style.opacity = '0';
+  }, duration);
+};
+
+const preventArrowScroll = (event) => {
+  if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+    event.preventDefault();
+  }
+};
+
+const handleWindowKeydown = (event) => {
+  const activeTerminal = jpTerminal.getActive();
+
+  if (!activeTerminal) {
+    return;
+  }
+
+  if (event.key === 'Enter') {
+    const buffer = activeTerminal.querySelector('.buffer');
+    if (!buffer) {
+      return;
+    }
+
+    const line = buffer.value;
+    buffer.value = '';
+
+    if (activeTerminal.id === 'chess-terminal') {
+      const history = activeTerminal.querySelector('.command-history');
+      if (history) {
+        const entry = document.createElement('div');
+        entry.className = 'entered-command';
+        entry.textContent = line || ' ';
+        history.append(entry);
       }
-    }
-
-    api.setActive = function(active) {
-      env.active = $(active) || env.active;
-    }
-
-    api.getActive = function() {
-      return env.active;
-    }
-
-    api.nextIndex = function() {
-      return ++env.maxIndex;
-    }
-
-    api.init = function() {
-      // HTML5 audio element detection
-      if (Modernizr.audio.mp3 || Modernizr.audio.wav || Modernizr.audio.ogg) {
-        const beepHTML5 = $('<audio preload="auto"/>');
-        const lockDownHTML5 = $('<audio preload="auto"/>');
-        const dennisMusicHTML5 = $('<audio preload="auto"/>');
-
-        beepHTML5.append('<source src="/snd/beep.ogg">');
-        beepHTML5.append('<source src="/snd/beep.mp3">');
-        beepHTML5.append('<source src="/snd/beep.wav">');
-
-        lockDownHTML5.append('<source src="/snd/lockDown.ogg">');
-        lockDownHTML5.append('<source src="/snd/lockDown.mp3">');
-        lockDownHTML5.append('<source src="/snd/lockDown.wav">');
-
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.ogg">');
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.mp3">');
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.wav">');
-
-        env.sounds.beep = {
-          play: function() {
-            beepHTML5[0].load();
-            beepHTML5[0].play();
-          }
-        };
-
-        env.sounds.lockDown = {
-          play: function() {
-            lockDownHTML5[0].load();
-            lockDownHTML5[0].play();
-          }
-        };
-
-        env.sounds.dennisMusic = {
-          play: function() {
-            dennisMusicHTML5[0].load();
-            dennisMusicHTML5[0].play();
-          },
-          stop: function() {
-            dennisMusicHTML5[0].pause();
-          },
-        };
-
-        dennisMusicHTML5.bind('ended', function() {
-          env.sounds.dennisMusic.play();
-        });
-      }  else {
-        sm.setup({ 
-          url: '/swf/soundManager/',
-          onready: function() {
-            env.sounds.beep = sm.createSound({
-              autoLoad: true,
-              id: 'beep',
-              url: '/snd/beep.mp3',
-            });
-
-            env.sounds.lockDown = sm.createSound({
-              autoLoad: true,
-              id: 'lockDown',
-              url: '/snd/lockDown.mp3',
-            });
-
-            env.sounds.dennisMusic = sm.createSound({
-              autoLoad: true,
-              id: 'dennisMusic',
-              onfinish: function() {
-                sm.play('dennisMusic');
-              },
-              url: '/snd/dennisMusic.mp3',
-            });
-          },
-        });
+      const chessInput = document.getElementById('curr-chess-input');
+      if (chessInput) {
+        chessInput.textContent = '';
       }
-    };
+    } else {
+      const mainInput = document.getElementById('curr-main-input');
+      if (mainInput) {
+        mainInput.textContent = '';
+      }
+      jpTerminal.buildCommandLine(line);
+    }
+  }
 
-    return api;
-  }());
+  const wrap = activeTerminal.querySelector('.inner-wrap');
+  if (wrap) {
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+};
 
-  jpTerminal.init();
-  jpTerminal.setActive('#main-terminal');
+const registerCommands = () => {
+  const { addCommand, appendToActive, env, scrollActive } = jpTerminal;
 
-  jpTerminal.addCommand({
+  addCommand({
     name: 'music',
     summary: 'turn background music on or off',
-    manPage: 'SYNOPSIS\n' + 
-             '\tmusic [on|off]\n\n' + 
-             'DESCRIPTION\n' + 
-             '\tManage the state of the \'Dennis Steals the Embryo\' ' +
-             'music. Use the \'on\' state for\n\tincreased epicness.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
-    command: function(env, inputLine) {
+    manPage: 'SYNOPSIS\n' +
+      '\tmusic [on|off]\n\n' +
+      'DESCRIPTION\n' +
+      '\tManage the state of the \'Dennis Steals the Embryo\' music. Use the \'on\' state for\n\tincreased epicness.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
+    execute: (environment, inputLine) => {
       const arg = inputLine.trim().split(/ +/)[1] || '';
-      const output = $('<span/>').text('music: must specify state [on|off]');
 
-      if (!arg || !arg.match(/^(?:on|off)$/i)) {
-        $('#main-input').append(output);
-      } else {
-        if (arg.toLowerCase() === 'on') {
-          if (!env.musicOn) {
-            env.sounds.dennisMusic.play();
-          }
-          env.musicOn = true;
-        } else if (arg.toLowerCase() === 'off') {
-          env.sounds.dennisMusic.stop();
-          env.musicOn = false;
-        }
+      if (!arg || !/^(?:on|off)$/i.test(arg)) {
+        const output = document.createElement('span');
+        output.textContent = 'music: must specify state [on|off]';
+        appendToActive(output);
+        return;
+      }
+
+      const desiredState = arg.toLowerCase();
+      if (desiredState === 'on' && !environment.musicOn) {
+        environment.sounds.dennisMusic.play();
+        environment.musicOn = true;
+      } else if (desiredState === 'off') {
+        environment.sounds.dennisMusic.stop();
+        environment.musicOn = false;
       }
     },
   });
 
-  jpTerminal.addCommand({
-    name: 'access', 
+  addCommand({
+    name: 'access',
+    matcher: isAccessCommandName,
     summary: 'access a target environment on the Jurassic Systems grid',
     manPage: 'SYNOPSIS\n' +
-             '\taccess [SYSTEM_NAME] [MAGIC_WORD]\n\n' +
-             'DESCRIPTION\n' + 
-             '\tGain read and write access to a specified environment.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Dennis Nedry.\n',
-    command: function(env, inputLine) {
-      const output = $('<span>').text('access: PERMISSION DENIED.');
+      '\taccess [SYSTEM_NAME] [MAGIC_WORD]\n\n' +
+      'DESCRIPTION\n' +
+      '\tGain read and write access to a specified environment.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Dennis Nedry.\n',
+    execute: (environment, inputLine) => {
       const arg = inputLine.split(/ +/)[1] || '';
-      const magicWord =
-        inputLine.substring(inputLine.trim().lastIndexOf(' ')) || '';
+      const magicWord = inputLine.substring(inputLine.trim().lastIndexOf(' ')) || '';
 
       if (arg === '') {
-        $('#main-input').append($('<span/>')
-          .text('access: must specify target system'));
-
-        return;
-      } else if (
-        inputLine.split(' ').length > 2 &&
-        magicWord.trim() === 'please'
-      ) {
-        $('#main-input')
-          .append($('<img id="asciiNewman" src="/img/asciiNewman.jpg" />'));
-        $('#asciiNewman').load(function() {
-          const wrap = $('.inner-wrap', env.active);
-          wrap.scrollTop(wrap[0].scrollHeight);
-        });
-
+        const output = document.createElement('span');
+        output.textContent = 'access: must specify target system';
+        appendToActive(output);
         return;
       }
 
-      $('#main-input').append(output);
-      env.sounds.beep.play();
+      if (inputLine.split(' ').length > 2 && magicWord.trim() === 'please') {
+        const asciiNewman = document.createElement('img');
+        asciiNewman.id = 'asciiNewman';
+        asciiNewman.src = '/img/asciiNewman.jpg';
+        asciiNewman.alt = 'ASCII Dennis Nedry';
+        appendToActive(asciiNewman);
+        asciiNewman.addEventListener('load', () => scrollActive());
+        return;
+      }
 
-      if (++env.accessAttempts >= 3) {
-        const andMessage = $('<span>').text('...and...');
-        let errorSpam;
+      const denial = document.createElement('span');
+      denial.textContent = 'access: PERMISSION DENIED.';
+      appendToActive(denial);
+      environment.sounds.beep.play();
 
-        $('.irix-window').unbind('keydown');
-        $('#main-prompt').addClass('hide');
+      environment.accessAttempts += 1;
+      if (environment.accessAttempts >= 3) {
+        const prompt = document.getElementById('main-prompt');
+        if (prompt) {
+          prompt.classList.add('hide');
+        }
 
-        setTimeout(function() {
-          $('#main-input').append(andMessage);
+        let errorSpam = null;
+
+        window.setTimeout(() => {
+          const andMessage = document.createElement('span');
+          andMessage.textContent = '...and...';
+          appendToActive(andMessage);
         }, 200);
 
-        setTimeout(function() {
-          env.sounds.lockDown.play();
+        window.setTimeout(() => {
+          environment.sounds.lockDown.play();
         }, 1000);
 
-        setTimeout(function() {
-          $('#environment').animate(
-            {'left': '+=3000'},
-            2000,
-            function() {
-              setTimeout(function() {
+        window.setTimeout(() => {
+          const desktop = document.getElementById('irix-desktop');
+          const appleDesktop = document.getElementById('apple-desktop');
+          const theKingWindow = document.getElementById('the-king-window');
+          const macHdWindow = document.getElementById('mac-hd-window');
+          const environmentContainer = document.getElementById('environment');
+
+          if (environmentContainer) {
+            const animation = environmentContainer.animate([
+              { transform: 'translateX(0)' },
+              { transform: 'translateX(3000px)' },
+            ], {
+              duration: 2000,
+              fill: 'forwards',
+              easing: 'ease-in-out',
+            });
+
+            const onFinish = () => {
+              window.setTimeout(() => {
+                if (errorSpam) {
+                  window.clearInterval(errorSpam);
+                }
+
                 const theKingVideo = document.getElementById('the-king-video');
+                if (theKingVideo) {
+                  try {
+                    theKingVideo.play();
+                  } catch (error) {
+                    // Autoplay restrictions may block playback; ignore.
+                  }
+                }
 
-                errorSpam != null && clearInterval(errorSpam);
-                theKingVideo != null && theKingVideo.play();
-                $('#irix-desktop').hide();
-                $('#mac-hd-window').css('background-image', 'url(/img/macHDBlur.jpg)');
-                $('#the-king-window').show();
+                if (desktop) {
+                  desktop.style.display = 'none';
+                }
 
-                setTimeout(function() {
-                  $('#home-key').css('z-index', '64000');
-                }, 10000);
+                if (macHdWindow) {
+                  macHdWindow.style.backgroundImage = 'url(/img/macHDBlur.jpg)';
+                }
+
+                if (theKingWindow) {
+                  theKingWindow.hidden = false;
+                  theKingWindow.style.display = 'block';
+                }
+
+                if (appleDesktop) {
+                  appleDesktop.style.left = '10px';
+                }
               }, 2000);
-            },
-          );
+            };
+
+            if (animation && animation.finished) {
+              animation.finished.then(onFinish).catch(() => {});
+            } else {
+              window.setTimeout(onFinish, 2000);
+            }
+          }
         }, 4000);
 
-        setTimeout(function() {
-          errorSpam = setInterval(function() {
-            var errorMessage = $('<div>YOU DIDN\'T SAY THE MAGIC WORD!</div>');
-            $('#main-input').append(errorMessage);
-            $('#main-inner').scrollTop($('#main-inner')[0].scrollHeight);
+        window.setTimeout(() => {
+          errorSpam = window.setInterval(() => {
+            const errorMessage = document.createElement('div');
+            errorMessage.textContent = "YOU DIDN'T SAY THE MAGIC WORD!";
+            appendToActive(errorMessage);
           }, 50);
         }, 1000);
+
+        document.querySelectorAll('.irix-window').forEach((windowEl) => {
+          windowEl.removeEventListener('keydown', handleWindowKeydown);
+        });
       }
-    }
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
     name: 'system',
-    summary: 'check a system\'s current status',
+    summary: "check a system's current status",
     manPage: 'SYNOPSIS\n' +
-             '\tsystem [SYSTEM_NAME]\n\n' +
-             'DESCRIPTION\n' +
-             '\tCheck the input system and return each sector\'s ' +
-             'current status.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Dennis Nedry.\n',
-    command: function(env, inputLine) {
+      '\tsystem [SYSTEM_NAME]\n\n' +
+      'DESCRIPTION\n' +
+      "\tCheck the input system and return each sector's current status.\n\n" +
+      'AUTHOR\n' +
+      '\tWritten by Dennis Nedry.\n',
+    execute: (environment, inputLine) => {
       const arg = inputLine.split(/ +/)[1] || '';
-      let output = '<span>system: must specify target system</span>';
-
-      if (arg.length > 0) {
-        let system = arg.replace(/s$/, '');
-        system = system[0].toUpperCase() + system.slice(1);
-        system = $('<div/>').text(system).html();
-        output = '<div>' + system + ' containment enclosure....</div>' +
-                 '<table id="system-output"><tbody>' +
-                 '<tr><td>Security</td><td>[OK]</td></tr>' +
-                 '<tr><td>Fence</td><td>[OK]</td></tr>' +
-                 '<tr><td>Feeding Pavilion</td><td>[OK]</td></tr>' +
-                 '</tbody></table>';
-
-        $('#main-prompt').addClass('hide');
-        $('#main-input').append($(output));
-        output = '<div>System Halt!</div>';
-        env.sounds.beep.play();
-
-        setTimeout(function() {
-          const wrap = $('.inner-wrap', env.active);
-          env.sounds.beep.play();
-          $('#main-input').append($(output));
-          wrap.scrollTop(wrap[0].scrollHeight);
-          $('#main-prompt').removeClass('hide');
-        }, 900);
-      } else {
-        $('#main-input').append($(output));
+      if (!arg) {
+        appendToActive('<span>system: must specify target system</span>', { html: true });
+        return;
       }
-    }
+
+      let system = arg.replace(/s$/, '');
+      system = system.charAt(0).toUpperCase() + system.slice(1);
+      const safeSystem = document.createElement('div');
+      safeSystem.textContent = system;
+
+      const output = '<div>' + safeSystem.innerHTML + ' containment enclosure....</div>' +
+        '<table id="system-output"><tbody>' +
+        '<tr><td>Security</td><td>[OK]</td></tr>' +
+        '<tr><td>Fence</td><td>[OK]</td></tr>' +
+        '<tr><td>Feeding Pavilion</td><td>[OK]</td></tr>' +
+        '</tbody></table>';
+
+      const prompt = document.getElementById('main-prompt');
+      if (prompt) {
+        prompt.classList.add('hide');
+      }
+
+      appendToActive(output, { html: true });
+      environment.sounds.beep.play();
+
+      window.setTimeout(() => {
+        environment.sounds.beep.play();
+        appendToActive('<div>System Halt!</div>', { html: true });
+        if (prompt) {
+          prompt.classList.remove('hide');
+        }
+      }, 900);
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
     name: 'ls',
     summary: 'list files in the current directory',
-    manPage: 'SYNOPSIS\n' + 
-             '\tls [FILE] ...\n\n' +
-             'DESCRIPTION\n' + 
-             '\tList information about the FILEs ' +
-             '(the current directory by default).\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Richard Stallman and David MacKenzie.\n',
-    command: function(env, inputLine) {
-      $('#main-input').append($('<div>zebraGirl.jpg</div>'));
-    }
-  });
-
-  jpTerminal.addCommand({
-    name: 'display',
-    summary: 'display image files (hint: use ls to find a \'file\')',
     manPage: 'SYNOPSIS\n' +
-             '\tdisplay file ...\n\n' +
-             'DESCRIPTION\n' +
-             '\tDisplay is a machine architecture independent image ' +
-             'processing and display\n\tprogram. It can ' +
-             '<strong>display</strong> an image on any workstation screen ' +
-             'running an X server.\n\n' +
-             'AUTHOR\n' +
-             '\tJohn Cristy, ImageMagick Studio.\n',
-      command: function(env, inputLine) {
-        const args = inputLine.trim().split(' ');
-
-        if (args.length < 2) {
-          $('#main-input')
-            .append($('<span>display: no file specified</span>'));
-          return;
-        }
-
-        if (inputLine.match(/zebraGirl\.jpg/)) {
-          setTimeout(function() {
-            $('#zebra-girl').css('z-index', ++env.maxIndex);
-            $('#zebra-girl').show();
-            blurAllWindows();
-          }, 300);
-        }
-      }
+      '\tls [FILE] ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tList information about the FILEs (the current directory by default).\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Richard Stallman and David MacKenzie.\n',
+    execute: () => {
+      appendToActive('<div>zebraGirl.jpg</div>', { html: true });
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
+    name: 'display',
+    summary: "display image files (hint: use ls to find a 'file')",
+    manPage: 'SYNOPSIS\n' +
+      '\tdisplay file ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tDisplay is a machine architecture independent image processing and display\n\tprogram. It can <strong>display</strong> an image on any workstation screen running an X server.\n\n' +
+      'AUTHOR\n' +
+      '\tJohn Cristy, ImageMagick Studio.\n',
+    execute: (environment, inputLine) => {
+      const args = inputLine.trim().split(' ');
+      if (args.length < 2) {
+        appendToActive('<span>display: no file specified</span>', { html: true });
+        return;
+      }
+
+      if (/zebraGirl\.jpg/i.test(inputLine)) {
+        window.setTimeout(() => {
+          const zebraGirl = document.getElementById('zebra-girl');
+          if (zebraGirl) {
+            zebraGirl.style.zIndex = String(jpTerminal.nextIndex());
+            zebraGirl.hidden = false;
+            zebraGirl.style.display = 'block';
+            blurAllWindows();
+          }
+        }, 300);
+      }
+    },
+  });
+
+  addCommand({
     name: 'keychecks',
     summary: 'display system level command history',
     manPage: 'SYNOPSIS\n' +
-             '\tkeychecks\n\n' +
-             'DESCRIPTION\n' +
-             '\tA system level command log used for accountability ' +
-             'purposes. keychecks must be\n\tactivated or deactivated ' +
-             'via the main board.\n',
-    command: function(env, inputLine) {
+      '\tkeychecks\n\n' +
+      'DESCRIPTION\n' +
+      '\tA system level command log used for accountability purposes. keychecks must be\n\tactivated or deactivated via the main board.\n',
+    execute: () => {
       const output =
         '13,42,121,32,88,77,19,13,44,52,77,90,13,99,13,100,13,109,55,103,144,' +
         '13,99,87,60,13,44,12,09,13,43,63,13,46,57,89,103,122,13,44,52,88,931,' +
@@ -361,188 +525,201 @@
         'sl off\n' +
         'security\n' +
         'whte_rbt.obj\n';
-      $('#main-input').append(output);
-    }
+
+      appendToActive(output);
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
     name: 'man',
     summary: 'display reference manual for a given command',
     manPage: 'SYNOPSIS\n' +
-             '\tman title ...\n\n' +
-             'DESCRIPTION\n' +
-             '\tman locates and prints the titled entries from the on-line ' +
-             'reference manuals.\n',
-    command: function(env, inputLine) {
+      '\tman title ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tman locates and prints the titled entries from the on-line reference manuals.\n',
+    execute: (environment, inputLine) => {
       const arg = inputLine.trim().split(/ +/)[1] || '';
       let output = 'What manual page do you want?';
 
-      if (env.commands.hasOwnProperty(arg)) {
-        output = env.commands[arg].manPage;
-      } else if (arg) {
-        output = 'No manual entry for ' + $('<div/>').text(arg).html();
+      if (environment.commands.has(arg.toLowerCase())) {
+        output = environment.commands.get(arg.toLowerCase()).manPage;
+        appendToActive(output, { html: true });
+        return;
       }
 
-      $('#main-input').append(output);
-    }
+      if (arg) {
+        const safeArg = document.createElement('div');
+        safeArg.textContent = arg;
+        output = 'No manual entry for ' + safeArg.innerHTML;
+        appendToActive(output, { html: true });
+        return;
+      }
+
+      appendToActive(output);
+    },
   });
 
-  jpTerminal.addCommand({
-    name: 'help', 
+  addCommand({
+    name: 'help',
     summary: 'list available commands',
     manPage: 'SYNOPSIS\n' +
-              '\thelp\n\n' +
-              'DESCRIPTION\n' +
-              '\tDisplay a command summary for Jurassic Systems.\n\n' +
-              'AUTHOR\n' +
-              '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
-    command: function(env, inputLine) {
-      for (var command in env.commands) {
-        env.active.find('.command-history')
-          .append($('<div>')
-          .text(
-            env.commands[command].name + 
-            ' - ' +
-            env.commands[command].summary)
-          );
+      '\thelp\n\n' +
+      'DESCRIPTION\n' +
+      '\tDisplay a command summary for Jurassic Systems.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
+    execute: (environment) => {
+      environment.commands.forEach((details) => {
+        const entry = document.createElement('div');
+        entry.textContent = `${details.name} - ${details.summary}`;
+        appendToActive(entry);
+      });
+    },
+  });
+};
+
+const setupInteractions = () => {
+  const mainBuffer = document.getElementById('main-buffer');
+  const chessBuffer = document.getElementById('chess-buffer');
+  const mainInput = document.getElementById('curr-main-input');
+  const chessInput = document.getElementById('curr-chess-input');
+  const mainTerminal = document.getElementById('main-terminal');
+  const windows = Array.from(document.querySelectorAll('.irix-window'));
+
+  if (mainBuffer) {
+    mainBuffer.addEventListener('input', () => {
+      if (mainInput) {
+        mainInput.textContent = mainBuffer.value;
       }
+    });
+  }
+
+  if (chessBuffer) {
+    chessBuffer.addEventListener('input', () => {
+      if (chessInput) {
+        chessInput.textContent = chessBuffer.value;
+      }
+    });
+  }
+
+  let dragging = null;
+  let diffX = 0;
+  let diffY = 0;
+
+  const beginDrag = (event) => {
+    const windowEl = event.currentTarget.parentElement;
+    if (!windowEl) {
+      return;
+    }
+
+    dragging = windowEl;
+    dragging.classList.add('dragging');
+    dragging.style.zIndex = String(jpTerminal.nextIndex());
+    diffY = event.pageY - dragging.offsetTop;
+    diffX = event.pageX - dragging.offsetLeft;
+  };
+
+  const drag = (event) => {
+    if (!dragging) {
+      return;
+    }
+    dragging.style.top = `${event.pageY - diffY}px`;
+    dragging.style.left = `${event.pageX - diffX}px`;
+  };
+
+  const endDrag = () => {
+    if (!dragging) {
+      return;
+    }
+    dragging.classList.remove('dragging');
+    dragging = null;
+  };
+
+  document.querySelectorAll('.window-bar').forEach((bar) => {
+    bar.addEventListener('mousedown', beginDrag);
+  });
+
+  document.body.addEventListener('mousemove', drag);
+  document.body.addEventListener('mouseup', endDrag);
+
+  windows.forEach((windowEl) => {
+    windowEl.addEventListener('click', (event) => {
+      event.stopPropagation();
+      blurAllWindows();
+      jpTerminal.setActive(windowEl);
+      windowEl.style.zIndex = String(jpTerminal.nextIndex());
+      const cursor = windowEl.querySelector('.cursor');
+      if (cursor) {
+        cursor.classList.add('active-cursor');
+      }
+      const buffer = windowEl.querySelector('.buffer');
+      if (buffer) {
+        buffer.focus();
+      }
+    });
+
+    windowEl.addEventListener('keydown', handleWindowKeydown);
+  });
+
+  document.addEventListener('click', blurAllWindows);
+  window.addEventListener('keydown', preventArrowScroll);
+
+  if (mainTerminal) {
+    jpTerminal.setActive(mainTerminal);
+    const cursor = mainTerminal.querySelector('.cursor');
+    if (cursor) {
+      cursor.classList.add('active-cursor');
+    }
+    if (mainBuffer) {
+      mainBuffer.focus();
+    }
+  }
+};
+
+const setupAppleDesktop = () => {
+  const appleDesktop = document.getElementById('apple-desktop');
+  if (!appleDesktop) {
+    return;
+  }
+
+  appleDesktop.addEventListener('click', (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    if (!event.target.closest('#the-king-window')) {
+      flicker('the-king-blur', 50, 450);
     }
   });
+};
 
-  // helpers
-  const flicker = function(altId, interval, duration) {
-    let visible = true;
-    const alt = $('#' + altId).show();
-    const flickering = setInterval(function() {
-      if (visible) {
-        alt.css('opacity', '1');
-      } else {
-        alt.css('opacity', '0');
-      }
+const removeBootScreen = () => {
+  window.setTimeout(() => {
+    const boot = document.getElementById('irix-boot');
+    if (boot) {
+      boot.remove();
+    }
+    const mainBuffer = document.getElementById('main-buffer');
+    if (mainBuffer) {
+      mainBuffer.focus();
+    }
+  }, 4500);
+};
 
-      visible = !visible;
-    }, interval);
+const init = () => {
+  cacheImages([
+    '/img/theKingBlur.jpg',
+    '/img/theKingFocus.jpg',
+    '/img/macHDBlur.jpg',
+    '/img/asciiNewman.jpg',
+    '/img/zebraGirlWindow.jpg',
+  ]);
 
-    setTimeout(function() {
-      clearInterval(flickering);
-      alt.css('opacity', '0');
-      alt.hide()
-    }, duration);
-  };
+  jpTerminal.init();
+  registerCommands();
+  setupInteractions();
+  setupAppleDesktop();
+  removeBootScreen();
+};
 
-  const blurAllWindows = function() {
-    $('.cursor', '.irix-window').removeClass('active-cursor');
-    $('.buffer').blur();
-  };
-
-  $(document).ready(function() {
-    // attempt to cache objects
-    $(['theKingBlur.jpg',
-      'theKingFocus.jpg',
-      'macHDBlur.jpg',
-      'asciiNewman.jpg',
-      'zebraGirlWindow.jpg',
-    ]).each(function() {
-      new Image().src = '/img/' + this;
-    });
-
-
-    // remove boot screen
-    setTimeout(function() {
-      $('#irix-boot').remove();
-      $('#main-buffer').focus();
-
-      if (!location.pathname.match(/system/)) {
-        $('#main-buffer').blur();
-        $('#intro').show();
-        $('#intro').click(function() {
-          $(this).fadeOut(1000);
-          $('#intro-scene').attr('src', '');
-        });
-      }
-    }, 4500);
-
-    $('body').click(blurAllWindows);
-
-    (function() {
-      let diffX = 0;
-      let diffY = 0;
-
-      $('.window-bar').mousedown(function(e) {
-        var dragging = $(this).parent()
-        .css('z-index', jpTerminal.nextIndex())
-        .addClass('dragging');
-      diffY = e.pageY - dragging.offset().top;
-      diffX = e.pageX - dragging.offset().left;
-      });
-
-      $('body').mousemove(function(e) {
-        $('.dragging').offset({
-          top: e.pageY - diffY,
-          left: e.pageX - diffX
-        });
-      });
-    }());
-
-    $('body').mouseup(function(e) {
-      $('.dragging').removeClass('dragging');
-    });
-
-    $('.irix-window').click(function(e) {
-      e.stopPropagation();
-      blurAllWindows();
-      jpTerminal.setActive(this);
-      $('.buffer', this).focus();
-      $(this).css('z-index', jpTerminal.nextIndex());
-      $(this).find('.cursor').addClass('active-cursor');
-    });
-
-    $(window).keydown(function(e) {
-      if ([37, 38, 39, 40].indexOf(e.keyCode || e.which) > -1) {
-        e.preventDefault();
-      }
-    });
-
-    $('.irix-window').keydown(function(e) {
-      const key = e.keyCode || e.which;
-      const activeTerminal = jpTerminal.getActive();
-
-      if (!activeTerminal) {
-        return false;
-      }
-
-      // if enter
-      if (key === 13) {
-        const line = activeTerminal.find('.buffer').val();
-        activeTerminal.find('.buffer').val('');
-
-        if (activeTerminal.attr('id') === 'chess-terminal') {
-          $('#curr-chess-input').html('');
-          activeTerminal.find('.command-history')
-            .append($('<div class="entered-command">')
-            .text(line || ' '));
-        } else {
-          $('#curr-main-input').html('');
-          jpTerminal.buildCommandLine(line);
-        }
-      }
-
-      const wrap = activeTerminal.find('.inner-wrap');
-      wrap.scrollTop(wrap[0].scrollHeight);
-    });
-
-    $('#main-terminal .buffer').bind('input propertychange', function() {
-      $('#curr-main-input').text($(this).val());
-    });
-
-    $('#chess-terminal .buffer').bind('input propertychange', function() {
-      $('#curr-chess-input').text($(this).val());
-    });
-
-    $('#apple-desktop').click(function(e){
-      if ($(e.target).closest('.mac-window').attr('id') !== 'the-king-window') {
-        flicker('the-king-blur', 50, 450);
-      }
-    });
-  });
-}(jQuery, soundManager));
+document.addEventListener('DOMContentLoaded', init);
