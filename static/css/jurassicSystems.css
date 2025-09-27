@@ -1,356 +1,273 @@
-body {
-   overflow-x: hidden;
-   overflow-y: auto;
-   padding: 0px;
-   margin: 0px;
-   background: black;
-   width: 100%;
-   height: 100%;
+:root {
+  --console-font: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --terminal-foreground: #cccccc;
+  --focus-outline-color: #5fde5f;
+  --irix-width: 1124;
+  --irix-height: 850;
+  --shift-distance: 3000px;
 }
 
-#environment {
-   position: relative;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: #000;
+  color: var(--terminal-foreground);
+  font-family: var(--console-font);
+  font-synthesis: none;
+  overflow-x: hidden;
+}
+
+a {
+  color: var(--terminal-foreground);
 }
 
 #irix-boot {
-   position: absolute;
-   background: #6ba1d8;
-   z-index: 60000;
-   margin-left: 10px;
-   margin-top: 10px;
-   width: 1124px;
-   height: 850px;
+  position: fixed;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(100% - 20px, calc(var(--irix-width) * 1px));
+  background: #6ba1d8;
+  z-index: 60000;
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 12px;
 }
 
-.view-cover {
-   height: 100%;
-   width: 100%;
-   position: fixed;
-   background: black;
-   opacity: 0.5;
+#irix-boot img {
+  width: 100%;
+  height: auto;
+  display: block;
 }
 
-#intro {
-   height: 100%;
-   width: 100%;
-   position: absolute;
-   display: none;
-   z-index: 60000;
-}
-
-#intro-scene {
-   display: block;
-}
-
-#intro-box {
-   position: fixed;
-   top: 180px;
-   left: 280px;
-   background: black;
-   padding: 20px;
-}
-
-#intro-text {
-   width: 450px;
-   color: #cdcdcd;
-   font-family: Helvetica;
-   font-size: 15px;
-   margin-top: 17px;
-   display: inline-block;
-}
-
-#intro-divider {
-   height: 50px;
-   margin-left: 10px;
-   margin-right: 10px;
-   display: inline-block;
-   border-left: solid 1px #777777;
-}
-
-#continue-button {
-   display: inline-block;
-   margin-top: 20px;
-}
-
-#continue-button:hover {
-   cursor: pointer;
-}
-
-#boot-dialogue {
-   position: absolute;
-   margin: auto;
-   top: 200px;
-   left: 0;
-   right: 0;
-}
-
-#home-key {
-   position: fixed;
-   bottom: 10px;
-   right: 10px;
-   opacity: 0.7;
-}
-
-#home-key:hover {
-   opacity: 1;
-}
-
-#command-help {
-   width: 300px;
-   position: absolute;
-   bottom: 150px;
-   right: 20px;
-   z-index: 62000;
-   color: white;
-}
-
-#commands-title {
-   opacity: 0.7;
-}
-
-#command-help .highlighted {
-   background: #444;
-}
-
-#command-help td {
-   border: solid 1px #444;
-   padding: 5px;
+#environment {
+  position: relative;
+  margin: 10px auto 40px;
+  width: min(100%, calc(var(--irix-width) * 1px));
+  min-height: calc(var(--irix-height) * 1px);
+  transition: left 0.4s ease;
+  left: 0;
 }
 
 #irix-desktop {
-   background-image: url("/img/irixBackground.jpg");
-   background-repeat: no-repeat;
-   overflow: hidden;
-   margin-left: 10px;
-   margin-top: 10px;
-   width: 1124px;
-   height: 850px;
-   overflow: hidden;
-}
-
-#apple-desktop {
-   background-image: url("/img/appleBackground.jpg");
-   background-repeat: no-repeat;
-   overflow: hidden;
-   margin-left: 10px;
-   margin-top: 10px;
-   position: absolute;
-   left: -3000px;
-   width: 1124px;
-   height: 850px;
-   border-radius: 10px;
-}
-
-#main-terminal {
-   height: 582px;
-   width: 815px;
-   margin: auto;
-   padding-top: 31px;
-   padding-left: 30px;
-   background-image: url("/img/mainTerm.jpg");
-   background-repeat: no-repeat;
-   position: absolute;
-   top: 120px;
-   left: 160px;
-}
-
-#main-terminal .inner-wrap {
-   height: 570px;
-   width: 800px;
-   overflow: hidden;
-}
-
-.irix-window a {
-   color: #cccccc;
+  position: relative;
+  width: 100%;
+  aspect-ratio: var(--irix-width) / var(--irix-height);
+  background: url("/img/irixBackground.jpg") no-repeat center / 100% 100%;
+  overflow: hidden;
+  border-radius: 12px;
 }
 
 .irix-window,
 .mac-window {
-   position: relative;
+  position: absolute;
+  color: var(--terminal-foreground);
+  font-family: var(--console-font);
 }
 
-.window-bar {
-   position: absolute;
-   top: 0;
-   left: 0;
-   height: 30px;
-   width: 100%;
+.irix-window .window-bar,
+.mac-window .window-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 30px;
+  cursor: grab;
 }
 
-.dragging {
-   cursor: move;
+.irix-window.dragging .window-bar,
+.mac-window.dragging .window-bar {
+  cursor: grabbing;
 }
 
-.command-history, .command-input, .entered-command {
-   white-space: pre;
-   white-space: pre-wrap;
-   white-space: -moz-pre-wrap;
+#main-terminal {
+  top: 14.1%;
+  left: 14.2%;
+  width: 72.5%;
+  height: 68.5%;
+  padding-top: 5.3%;
+  padding-left: 3.7%;
+  background: url("/img/mainTerm.jpg") no-repeat center / 100% 100%;
+  z-index: 2;
 }
 
-#chess-terminal {
-   background-image: url("/img/chessTerm.jpg");
-   background-repeat: no-repeat;
-   padding-top: 31px;
-   padding-left: 30px;
-   height: 215px;
-   width: 820px;
-   position: absolute;
-   top: 600px;
-   left: 5px;
-}
-
-#chess-terminal .inner-wrap {
-   height: 207px;
-   width: 805px;
-   overflow: hidden;
-}
-
-#zebra-girl {
-   height: 760px;
-   width: 662px;
-   position: absolute;
-   display: none;
-   right: 20px;
-   top: 40px;
-   background-image: url("/img/zebraGirlWindow.jpg");
+#main-terminal .inner-wrap {
+  width: 98%;
+  height: 97.8%;
+  overflow: hidden;
 }
 
 .terminal-view {
-   font-family: 'Courier';
-   font-weight: 700;
-   font-size: 15px;
-   color: #CCCCCC;
-   word-wrap: break-word;
+  font-size: clamp(13px, 1.5vw, 15px);
+  font-weight: 600;
+  word-wrap: break-word;
+  color: var(--terminal-foreground);
 }
 
-.terminal-input {
-   width: 100%;
+.terminal-prompt {
+  margin-right: 4px;
+}
+
+.command-history,
+.command-input,
+.entered-command {
+  white-space: pre-wrap;
+}
+
+#main-input img {
+  max-width: 100%;
+  height: auto;
 }
 
 #gr-osview {
-   background-image: url('/img/grOsview.gif');
-   background-repeat: no-repeat;
-   height: 369px;
-   width: 393px;
-   position: absolute;
-   top: 220px;
-   left: 70px;
+  top: 25.9%;
+  left: 6.2%;
+  width: 35%;
+  height: 43.4%;
+  background: url("/img/grOsview.gif") no-repeat center / 100% 100%;
 }
 
-#the-king-window {
-   display: none;
-   background-image: url('/img/theKingFocus.jpg');
-   background-repeat: no-repeat;
-   width: 600px;
-   height: 620px;
-   position: absolute;
-   left: 50px;
-   top: 130px;
-   text-align: center;
+#zebra-girl {
+  top: 4.7%;
+  right: 1.8%;
+  width: 58.9%;
+  height: 89.4%;
+  display: none;
+  background: url("/img/zebraGirlWindow.jpg") no-repeat center / 100% 100%;
+  z-index: 3;
 }
 
-#the-king-video {
-  margin-top: 40px;
+#chess-terminal {
+  top: 70.6%;
+  left: 0.4%;
+  width: 72.9%;
+  height: 25.3%;
+  padding-top: 14.4%;
+  padding-left: 3.7%;
+  background: url("/img/chessTerm.jpg") no-repeat center / 100% 100%;
+  z-index: 1;
 }
 
-#the-king-blur {
-   background-image: url('/img/theKingBlur.jpg');
-   width: 600px;
-   height: 620px;
-   position: absolute;
-   top: 0;
-   left: 0;
-   opacity: 0;
-   display: none;
+#chess-terminal .inner-wrap {
+  width: 98%;
+  height: 96.3%;
+  overflow: hidden;
 }
 
-#king-animation {
-   margin: 50px;
-   z-index: 50000;
+table {
+  border-collapse: collapse;
 }
 
-#king-swf {
-   z-index: 64000;
+#chess-terminal table td {
+  padding: 0 5px;
+  line-height: 1.1;
 }
 
-#mac-hd-window {
-   width: 556px;
-   height: 566px;
-   background-image: url("/img/macHDFocus.jpg");
-   background-repeat: no-repeat;
-   position: absolute;
-   left: 15px;
-   top: 100px
+.chess-line {
+  line-height: 1.2;
 }
 
 .buffer {
-   position: absolute;
-   left: -10000px;
-   top: -10000px;
+  position: absolute;
+  left: -10000px;
+  top: -10000px;
 }
 
 .hide {
-   display: none;
+  display: none !important;
 }
 
 .cursor {
-   font-size: 15px;
-   border: solid 1px #5fde5f;
+  font-size: inherit;
+  border: solid 1px var(--focus-outline-color);
 }
 
 .active-cursor {
-   background: #5fde5f;
+  background: var(--focus-outline-color);
 }
 
-#irix-desktop {
-   position: absolute;
+#apple-desktop {
+  position: absolute;
+  top: 0;
+  left: calc(-1 * var(--shift-distance));
+  width: min(100%, calc(var(--irix-width) * 1px));
+  aspect-ratio: var(--irix-width) / var(--irix-height);
+  background: url("/img/appleBackground.jpg") no-repeat center / 100% 100%;
+  border-radius: 12px;
+  overflow: hidden;
 }
 
-table td, tr {
-   padding: 0px;
-   text-align: left;
-   line-height: 15px;
+#mac-hd-window {
+  top: 11.8%;
+  left: 1.3%;
+  width: 49.5%;
+  height: 66.6%;
+  background: url("/img/macHDFocus.jpg") no-repeat center / 100% 100%;
 }
 
-#chess-terminal table td, tr {
-   padding-left: 5px;
-   padding-right: 5px;
-   line-height: 13px;
-   width: 50px;
+#the-king-window {
+  display: none;
+  top: 15.3%;
+  left: 4.5%;
+  width: 53.4%;
+  height: 72.9%;
+  background: url("/img/theKingFocus.jpg") no-repeat center / 100% 100%;
+  text-align: center;
 }
 
-#system-output td{
-   width: 185px;
+#the-king-window.active {
+  display: block;
 }
 
-input[type="button"], button {
-   border:0 none;
-   font:inherit;
+#the-king-video {
+  margin-top: 6.4%;
+  width: 90%;
+  max-width: 540px;
+  border: none;
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
 
-*:focus{outline:0 none;}
-input[type="button"], button {-moz-box-sizing: content-box;}
-input[type="button"]::-moz-focus-inner, button::-moz-focus-inner { padding:0;border:0 none; }
+#the-king-blur {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: url("/img/theKingBlur.jpg") no-repeat center / 100% 100%;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
 
-.button {
-   background-image:url("/img/buttonOverlay.png");
-   -moz-border-radius:5px;
-   -webkit-border-radius:5px;
-   border-radius:5px;
-   cursor:pointer;
-   display:inline-block;
-   line-height:1;
-   overflow:visible;
-   position:relative;
-   text-decoration:none;
-   width:auto;
-   text-align:center;
-   background-color:#FFFFFF;
-   border:1px solid #CCCCCC;
-   color:#666666 !important;
-   font-weight:normal;
-   font-size:14px;
-   font-family: 'Arial';
-   text-shadow:0 1px 1px #FFFFFF;
-   padding:7px 16px;
+#the-king-blur.visible {
+  opacity: 1;
+}
+
+.irix-window:focus-visible,
+.irix-window:focus-within,
+.mac-window:focus-visible,
+.mac-window:focus-within {
+  outline: 2px solid var(--focus-outline-color);
+  outline-offset: 2px;
+}
+
+@media (max-width: 900px) {
+  #environment {
+    min-height: calc(var(--irix-height) * 0.85 * 1px);
+  }
+
+  #irix-desktop,
+  #apple-desktop {
+    border-radius: 8px;
+  }
 }

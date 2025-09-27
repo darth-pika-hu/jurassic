@@ -1,548 +1,677 @@
-(function($, sm) {
-  const jpTerminal = (function() {
-    const env = {
-      accessAttempts: 0,
-      active: null,
-      commands: {},
-      maxIndex: 1,
-      musicOn: false,
-      sounds: {},
-    };
-    const api = {};
+import { matchesAccessCommand } from './commands/access.js';
 
-    api.buildCommandLine = function(line) {
-      const commandName = line.trim().split(/ /)[0];
-      const command =
-        env.commands[commandName] &&
-        env.commands[commandName].command;
+const SHIFT_DISTANCE = (() => {
+  const raw = getComputedStyle(document.documentElement)
+    .getPropertyValue('--shift-distance')
+    .trim();
+  const numeric = parseFloat(raw);
+  return Number.isFinite(numeric) ? numeric : 3000;
+})();
 
-      env.active.find('.command-history')
-        .append($('<div class="entered-command">')
-        .text('> ' + line));
+function createAudioController(src, { loop = false } = {}) {
+  const audio = new Audio(src);
+  audio.preload = 'auto';
+  audio.loop = loop;
 
-      if (command) {
-        command(env, line);
-      } else if (commandName) {
-        env.active.find('.command-history')
-          .append($('<div>').text(commandName + ': command not found'));
+  return {
+    play() {
+      try {
+        audio.currentTime = 0;
+      } catch (_) {
+        // Ignore seek errors (e.g. when media not ready).
       }
-    }
 
-    api.addCommand = function(details) {
-      if (
-        details.name &&
-        !env.commands.hasOwnProperty(details.name) &&
-        (details.command.constructor === Function)
-      ) {
-        env.commands[details.name] = details;
+      const playPromise = audio.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
       }
-    }
-
-    api.setActive = function(active) {
-      env.active = $(active) || env.active;
-    }
-
-    api.getActive = function() {
-      return env.active;
-    }
-
-    api.nextIndex = function() {
-      return ++env.maxIndex;
-    }
-
-    api.init = function() {
-      // HTML5 audio element detection
-      if (Modernizr.audio.mp3 || Modernizr.audio.wav || Modernizr.audio.ogg) {
-        const beepHTML5 = $('<audio preload="auto"/>');
-        const lockDownHTML5 = $('<audio preload="auto"/>');
-        const dennisMusicHTML5 = $('<audio preload="auto"/>');
-
-        beepHTML5.append('<source src="/snd/beep.ogg">');
-        beepHTML5.append('<source src="/snd/beep.mp3">');
-        beepHTML5.append('<source src="/snd/beep.wav">');
-
-        lockDownHTML5.append('<source src="/snd/lockDown.ogg">');
-        lockDownHTML5.append('<source src="/snd/lockDown.mp3">');
-        lockDownHTML5.append('<source src="/snd/lockDown.wav">');
-
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.ogg">');
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.mp3">');
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.wav">');
-
-        env.sounds.beep = {
-          play: function() {
-            beepHTML5[0].load();
-            beepHTML5[0].play();
-          }
-        };
-
-        env.sounds.lockDown = {
-          play: function() {
-            lockDownHTML5[0].load();
-            lockDownHTML5[0].play();
-          }
-        };
-
-        env.sounds.dennisMusic = {
-          play: function() {
-            dennisMusicHTML5[0].load();
-            dennisMusicHTML5[0].play();
-          },
-          stop: function() {
-            dennisMusicHTML5[0].pause();
-          },
-        };
-
-        dennisMusicHTML5.bind('ended', function() {
-          env.sounds.dennisMusic.play();
-        });
-      }  else {
-        sm.setup({ 
-          url: '/swf/soundManager/',
-          onready: function() {
-            env.sounds.beep = sm.createSound({
-              autoLoad: true,
-              id: 'beep',
-              url: '/snd/beep.mp3',
-            });
-
-            env.sounds.lockDown = sm.createSound({
-              autoLoad: true,
-              id: 'lockDown',
-              url: '/snd/lockDown.mp3',
-            });
-
-            env.sounds.dennisMusic = sm.createSound({
-              autoLoad: true,
-              id: 'dennisMusic',
-              onfinish: function() {
-                sm.play('dennisMusic');
-              },
-              url: '/snd/dennisMusic.mp3',
-            });
-          },
-        });
+    },
+    stop() {
+      audio.pause();
+      try {
+        audio.currentTime = 0;
+      } catch (_) {
+        // Ignore seek errors.
       }
-    };
+    },
+  };
+}
 
-    return api;
-  }());
+function appendTextLine(target, text, className) {
+  const line = document.createElement('div');
+  if (className) {
+    line.className = className;
+  }
+  line.textContent = text;
+  target.append(line);
+  return line;
+}
 
-  jpTerminal.init();
-  jpTerminal.setActive('#main-terminal');
+function appendHtml(target, html) {
+  const template = document.createElement('template');
+  template.innerHTML = html.trim();
+  target.append(template.content);
+}
 
-  jpTerminal.addCommand({
+function appendPreformatted(target, content) {
+  const pre = document.createElement('pre');
+  pre.textContent = content;
+  target.append(pre);
+  return pre;
+}
+
+function scrollToBottom(windowElement) {
+  const wrap = windowElement.querySelector('.inner-wrap');
+  if (wrap) {
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+}
+
+function blurAllWindows() {
+  document.querySelectorAll('.cursor').forEach((cursor) => {
+    cursor.classList.remove('active-cursor');
+  });
+  document.querySelectorAll('.buffer').forEach((buffer) => buffer.blur());
+}
+
+function flicker(element, interval, duration) {
+  let visible = true;
+  element.classList.add('visible');
+  element.style.opacity = '1';
+  const timer = window.setInterval(() => {
+    element.style.opacity = visible ? '1' : '0';
+    visible = !visible;
+  }, interval);
+
+  window.setTimeout(() => {
+    clearInterval(timer);
+    element.classList.remove('visible');
+    element.style.opacity = '0';
+  }, duration);
+}
+
+const dom = {
+  environment: document.getElementById('environment'),
+  irixDesktop: document.getElementById('irix-desktop'),
+  appleDesktop: document.getElementById('apple-desktop'),
+  mainWindow: document.getElementById('main-terminal'),
+  chessWindow: document.getElementById('chess-terminal'),
+  zebraGirl: document.getElementById('zebra-girl'),
+  mainInput: document.getElementById('main-input'),
+  mainPrompt: document.getElementById('main-prompt'),
+  currMainInput: document.getElementById('curr-main-input'),
+  chessHistory: document.querySelector('#chess-terminal .command-history'),
+  currChessInput: document.getElementById('curr-chess-input'),
+  mainBuffer: document.getElementById('main-buffer'),
+  chessBuffer: document.getElementById('chess-buffer'),
+  macHdWindow: document.getElementById('mac-hd-window'),
+  theKingWindow: document.getElementById('the-king-window'),
+  theKingVideo: document.getElementById('the-king-video'),
+  theKingBlur: document.getElementById('the-king-blur'),
+  irixBoot: document.getElementById('irix-boot'),
+};
+
+const sounds = {
+  beep: createAudioController('/snd/beep.mp3'),
+  lockDown: createAudioController('/snd/lockDown.mp3'),
+  dennisMusic: createAudioController('/snd/dennisMusic.mp3', { loop: true }),
+};
+
+const state = {
+  accessAttempts: 0,
+  activeWindow: dom.mainWindow,
+  commands: new Map(),
+  maxZIndex: 2,
+  musicOn: false,
+  allowInput: true,
+  sounds,
+};
+
+function nextZIndex() {
+  state.maxZIndex += 1;
+  return state.maxZIndex;
+}
+
+function registerCommand({ name, summary, manPage, execute, matcher }) {
+  if (!name || typeof execute !== 'function') {
+    return;
+  }
+
+  const key = name.toLowerCase();
+  state.commands.set(key, {
+    name,
+    summary,
+    manPage,
+    execute,
+    matcher:
+      typeof matcher === 'function'
+        ? matcher
+        : (input) => input.toLowerCase() === key,
+  });
+}
+
+function resolveCommand(rawName) {
+  if (!rawName) {
+    return null;
+  }
+
+  for (const command of state.commands.values()) {
+    if (command.matcher(rawName)) {
+      return command;
+    }
+  }
+
+  return null;
+}
+
+function buildCommandLine(line) {
+  const trimmed = line.trim();
+  const [rawCommand = ''] = trimmed ? trimmed.split(/\s+/) : [''];
+  const historyTarget = state.activeWindow.querySelector('.command-history');
+  appendTextLine(historyTarget, `> ${line || ' '}`, 'entered-command');
+
+  if (!rawCommand) {
+    scrollToBottom(state.activeWindow);
+    return;
+  }
+
+  const command = resolveCommand(rawCommand);
+  if (command) {
+    command.execute(line);
+  } else {
+    appendTextLine(historyTarget, `${rawCommand}: command not found`);
+  }
+
+  scrollToBottom(state.activeWindow);
+}
+
+function setActiveWindow(windowElement) {
+  if (!windowElement || state.activeWindow === windowElement) {
+    return;
+  }
+
+  document
+    .querySelectorAll('.cursor')
+    .forEach((cursor) => cursor.classList.remove('active-cursor'));
+
+  state.activeWindow = windowElement;
+  windowElement.style.zIndex = String(nextZIndex());
+
+  const cursor = windowElement.querySelector('.cursor');
+  if (cursor) {
+    cursor.classList.add('active-cursor');
+  }
+
+  const buffer = windowElement.querySelector('.buffer');
+  if (buffer) {
+    buffer.focus();
+  }
+}
+
+function setupDragging() {
+  const dragState = {
+    element: null,
+    offsetX: 0,
+    offsetY: 0,
+  };
+
+  function handlePointerMove(event) {
+    if (!dragState.element) {
+      return;
+    }
+
+    event.preventDefault();
+    dragState.element.style.left = `${event.clientX - dragState.offsetX}px`;
+    dragState.element.style.top = `${event.clientY - dragState.offsetY}px`;
+  }
+
+  function endDrag() {
+    if (dragState.element) {
+      dragState.element.classList.remove('dragging');
+    }
+    dragState.element = null;
+  }
+
+  window.addEventListener('pointermove', handlePointerMove);
+  window.addEventListener('pointerup', endDrag);
+  window.addEventListener('pointercancel', endDrag);
+
+  document.querySelectorAll('.window-bar').forEach((bar) => {
+    bar.addEventListener('pointerdown', (event) => {
+      const host = bar.parentElement;
+      dragState.element = host;
+      dragState.offsetX = event.clientX - host.offsetLeft;
+      dragState.offsetY = event.clientY - host.offsetTop;
+      host.classList.add('dragging');
+      host.style.zIndex = String(nextZIndex());
+      bar.setPointerCapture(event.pointerId);
+    });
+
+    bar.addEventListener('pointerup', (event) => {
+      if (bar.hasPointerCapture(event.pointerId)) {
+        bar.releasePointerCapture(event.pointerId);
+      }
+    });
+  });
+}
+
+function setupWindowActivation() {
+  document.querySelectorAll('.irix-window').forEach((windowElement) => {
+    windowElement.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setActiveWindow(windowElement);
+    });
+    windowElement.addEventListener('focus', () => setActiveWindow(windowElement));
+  });
+
+  document.body.addEventListener('click', blurAllWindows);
+}
+
+function handleEnter(windowElement, buffer, currentInputEl) {
+  const line = buffer.value;
+  buffer.value = '';
+  currentInputEl.textContent = '';
+
+  if (windowElement.id === 'chess-terminal') {
+    appendTextLine(dom.chessHistory, line || ' ');
+    scrollToBottom(windowElement);
+    return;
+  }
+
+  buildCommandLine(line);
+}
+
+function setupBuffers() {
+  const arrowKeys = new Set(['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft']);
+
+  function handleKeydown(event) {
+    if (!state.allowInput) {
+      event.preventDefault();
+      return;
+    }
+
+    if (arrowKeys.has(event.key)) {
+      event.preventDefault();
+    }
+
+    if (event.key === 'Enter') {
+      const windowElement = event.currentTarget.closest('.irix-window');
+      const currentInputEl =
+        windowElement.id === 'chess-terminal'
+          ? dom.currChessInput
+          : dom.currMainInput;
+      handleEnter(windowElement, event.currentTarget, currentInputEl);
+    }
+  }
+
+  dom.mainBuffer.addEventListener('input', () => {
+    dom.currMainInput.textContent = dom.mainBuffer.value;
+  });
+
+  dom.chessBuffer.addEventListener('input', () => {
+    dom.currChessInput.textContent = dom.chessBuffer.value;
+  });
+
+  dom.mainBuffer.addEventListener('keydown', handleKeydown);
+  dom.chessBuffer.addEventListener('keydown', handleKeydown);
+
+  dom.mainBuffer.addEventListener('focus', () => setActiveWindow(dom.mainWindow));
+  dom.chessBuffer.addEventListener('focus', () => setActiveWindow(dom.chessWindow));
+}
+
+function createCommands() {
+  registerCommand({
     name: 'music',
     summary: 'turn background music on or off',
-    manPage: 'SYNOPSIS\n' + 
-             '\tmusic [on|off]\n\n' + 
-             'DESCRIPTION\n' + 
-             '\tManage the state of the \'Dennis Steals the Embryo\' ' +
-             'music. Use the \'on\' state for\n\tincreased epicness.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
-    command: function(env, inputLine) {
+    manPage:
+      'SYNOPSIS\n' +
+      '\tmusic [on|off]\n\n' +
+      'DESCRIPTION\n' +
+      '\tManage the state of the \'Dennis Steals the Embryo\' music. Use the \'on\' state for\n\tincreased epicness.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
+    execute: (inputLine) => {
       const arg = inputLine.trim().split(/ +/)[1] || '';
-      const output = $('<span/>').text('music: must specify state [on|off]');
 
-      if (!arg || !arg.match(/^(?:on|off)$/i)) {
-        $('#main-input').append(output);
-      } else {
-        if (arg.toLowerCase() === 'on') {
-          if (!env.musicOn) {
-            env.sounds.dennisMusic.play();
-          }
-          env.musicOn = true;
-        } else if (arg.toLowerCase() === 'off') {
-          env.sounds.dennisMusic.stop();
-          env.musicOn = false;
+      if (!arg || !/^(?:on|off)$/i.test(arg)) {
+        appendTextLine(dom.mainInput, 'music: must specify state [on|off]');
+        return;
+      }
+
+      if (/^on$/i.test(arg)) {
+        if (!state.musicOn) {
+          sounds.dennisMusic.play();
         }
+        state.musicOn = true;
+      } else {
+        sounds.dennisMusic.stop();
+        state.musicOn = false;
       }
     },
   });
 
-  jpTerminal.addCommand({
-    name: 'access', 
+  registerCommand({
+    name: 'access',
     summary: 'access a target environment on the Jurassic Systems grid',
-    manPage: 'SYNOPSIS\n' +
-             '\taccess [SYSTEM_NAME] [MAGIC_WORD]\n\n' +
-             'DESCRIPTION\n' + 
-             '\tGain read and write access to a specified environment.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Dennis Nedry.\n',
-    command: function(env, inputLine) {
-      const output = $('<span>').text('access: PERMISSION DENIED.');
-      const arg = inputLine.split(/ +/)[1] || '';
-      const magicWord =
-        inputLine.substring(inputLine.trim().lastIndexOf(' ')) || '';
+    manPage:
+      'SYNOPSIS\n' +
+      '\taccess [SYSTEM_NAME] [MAGIC_WORD]\n\n' +
+      'DESCRIPTION\n' +
+      '\tGain read and write access to a specified environment.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Dennis Nedry.\n',
+    matcher: matchesAccessCommand,
+    execute: (inputLine) => {
+      const parts = inputLine.trim().split(/ +/);
+      const target = parts[1] || '';
+      const magicWord = parts.length > 2 ? parts[parts.length - 1] : '';
 
-      if (arg === '') {
-        $('#main-input').append($('<span/>')
-          .text('access: must specify target system'));
-
+      if (!target) {
+        appendTextLine(dom.mainInput, 'access: must specify target system');
         return;
-      } else if (
-        inputLine.split(' ').length > 2 &&
-        magicWord.trim() === 'please'
-      ) {
-        $('#main-input')
-          .append($('<img id="asciiNewman" src="/img/asciiNewman.jpg" />'));
-        $('#asciiNewman').load(function() {
-          const wrap = $('.inner-wrap', env.active);
-          wrap.scrollTop(wrap[0].scrollHeight);
+      }
+
+      if (magicWord.toLowerCase() === 'please' && parts.length > 2) {
+        const asciiNewman = document.createElement('img');
+        asciiNewman.id = 'asciiNewman';
+        asciiNewman.src = '/img/asciiNewman.jpg';
+        asciiNewman.alt = 'ASCII depiction of Dennis Nedry';
+        asciiNewman.addEventListener('load', () => {
+          scrollToBottom(dom.mainWindow);
         });
-
+        dom.mainInput.append(asciiNewman);
         return;
       }
 
-      $('#main-input').append(output);
-      env.sounds.beep.play();
+      appendTextLine(dom.mainInput, 'access: PERMISSION DENIED.');
+      sounds.beep.play();
+      state.accessAttempts += 1;
 
-      if (++env.accessAttempts >= 3) {
-        const andMessage = $('<span>').text('...and...');
-        let errorSpam;
-
-        $('.irix-window').unbind('keydown');
-        $('#main-prompt').addClass('hide');
-
-        setTimeout(function() {
-          $('#main-input').append(andMessage);
-        }, 200);
-
-        setTimeout(function() {
-          env.sounds.lockDown.play();
-        }, 1000);
-
-        setTimeout(function() {
-          $('#environment').animate(
-            {'left': '+=3000'},
-            2000,
-            function() {
-              setTimeout(function() {
-                const theKingVideo = document.getElementById('the-king-video');
-
-                errorSpam != null && clearInterval(errorSpam);
-                theKingVideo != null && theKingVideo.play();
-                $('#irix-desktop').hide();
-                $('#mac-hd-window').css('background-image', 'url(/img/macHDBlur.jpg)');
-                $('#the-king-window').show();
-
-                setTimeout(function() {
-                  $('#home-key').css('z-index', '64000');
-                }, 10000);
-              }, 2000);
-            },
-          );
-        }, 4000);
-
-        setTimeout(function() {
-          errorSpam = setInterval(function() {
-            var errorMessage = $('<div>YOU DIDN\'T SAY THE MAGIC WORD!</div>');
-            $('#main-input').append(errorMessage);
-            $('#main-inner').scrollTop($('#main-inner')[0].scrollHeight);
-          }, 50);
-        }, 1000);
+      if (state.accessAttempts < 3) {
+        return;
       }
-    }
+
+      state.allowInput = false;
+      dom.mainPrompt.classList.add('hide');
+
+      const andMessage = document.createElement('span');
+      andMessage.textContent = '...and...';
+
+      window.setTimeout(() => {
+        dom.mainInput.append(andMessage);
+        scrollToBottom(dom.mainWindow);
+      }, 200);
+
+      window.setTimeout(() => {
+        sounds.lockDown.play();
+      }, 1000);
+
+      let errorSpam;
+
+      window.setTimeout(() => {
+        errorSpam = window.setInterval(() => {
+          const errorMessage = document.createElement('div');
+          errorMessage.textContent = "YOU DIDN'T SAY THE MAGIC WORD!";
+          dom.mainInput.append(errorMessage);
+          scrollToBottom(dom.mainWindow);
+        }, 50);
+      }, 1000);
+
+      window.setTimeout(() => {
+        const animation = dom.environment?.animate(
+          [
+            { left: `${dom.environment.offsetLeft}px` },
+            { left: `${dom.environment.offsetLeft + SHIFT_DISTANCE}px` },
+          ],
+          { duration: 2000, easing: 'ease-in-out', fill: 'forwards' },
+        );
+
+        const finalize = () => {
+          window.setTimeout(() => {
+            if (errorSpam) {
+              window.clearInterval(errorSpam);
+              errorSpam = null;
+            }
+
+            if (dom.theKingVideo) {
+              const playPromise = dom.theKingVideo.play();
+              if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch(() => {});
+              }
+            }
+
+            if (dom.irixDesktop) {
+              dom.irixDesktop.style.display = 'none';
+            }
+
+            if (dom.macHdWindow) {
+              dom.macHdWindow.style.backgroundImage = "url('/img/macHDBlur.jpg')";
+            }
+
+            if (dom.theKingWindow) {
+              dom.theKingWindow.classList.add('active');
+            }
+          }, 2000);
+        };
+
+        if (animation) {
+          animation.addEventListener('finish', finalize, { once: true });
+        } else {
+          dom.environment.style.left = `${SHIFT_DISTANCE}px`;
+          finalize();
+        }
+      }, 4000);
+    },
   });
 
-  jpTerminal.addCommand({
+  registerCommand({
     name: 'system',
-    summary: 'check a system\'s current status',
-    manPage: 'SYNOPSIS\n' +
-             '\tsystem [SYSTEM_NAME]\n\n' +
-             'DESCRIPTION\n' +
-             '\tCheck the input system and return each sector\'s ' +
-             'current status.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Dennis Nedry.\n',
-    command: function(env, inputLine) {
-      const arg = inputLine.split(/ +/)[1] || '';
-      let output = '<span>system: must specify target system</span>';
+    summary: "check a system's current status",
+    manPage:
+      'SYNOPSIS\n' +
+      '\tsystem [SYSTEM_NAME]\n\n' +
+      'DESCRIPTION\n' +
+      '\tCheck the input system and return each sector\'s current status.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Dennis Nedry.\n',
+    execute: (inputLine) => {
+      const arg = inputLine.trim().split(/ +/)[1] || '';
 
-      if (arg.length > 0) {
-        let system = arg.replace(/s$/, '');
-        system = system[0].toUpperCase() + system.slice(1);
-        system = $('<div/>').text(system).html();
-        output = '<div>' + system + ' containment enclosure....</div>' +
-                 '<table id="system-output"><tbody>' +
-                 '<tr><td>Security</td><td>[OK]</td></tr>' +
-                 '<tr><td>Fence</td><td>[OK]</td></tr>' +
-                 '<tr><td>Feeding Pavilion</td><td>[OK]</td></tr>' +
-                 '</tbody></table>';
-
-        $('#main-prompt').addClass('hide');
-        $('#main-input').append($(output));
-        output = '<div>System Halt!</div>';
-        env.sounds.beep.play();
-
-        setTimeout(function() {
-          const wrap = $('.inner-wrap', env.active);
-          env.sounds.beep.play();
-          $('#main-input').append($(output));
-          wrap.scrollTop(wrap[0].scrollHeight);
-          $('#main-prompt').removeClass('hide');
-        }, 900);
-      } else {
-        $('#main-input').append($(output));
+      if (!arg) {
+        appendHtml(dom.mainInput, '<span>system: must specify target system</span>');
+        return;
       }
-    }
+
+      const formatted = arg.replace(/s$/i, '');
+      const system = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+      const safeSystem = document.createElement('div');
+      safeSystem.textContent = system;
+
+      appendHtml(
+        dom.mainInput,
+        `<div>${safeSystem.innerHTML} containment enclosure....</div>` +
+          '<table id="system-output"><tbody>' +
+          '<tr><td>Security</td><td>[OK]</td></tr>' +
+          '<tr><td>Fence</td><td>[OK]</td></tr>' +
+          '<tr><td>Feeding Pavilion</td><td>[OK]</td></tr>' +
+          '</tbody></table>',
+      );
+
+      dom.mainPrompt.classList.add('hide');
+      sounds.beep.play();
+
+      window.setTimeout(() => {
+        sounds.beep.play();
+        appendHtml(dom.mainInput, '<div>System Halt!</div>');
+        scrollToBottom(dom.mainWindow);
+        dom.mainPrompt.classList.remove('hide');
+      }, 900);
+    },
   });
 
-  jpTerminal.addCommand({
+  registerCommand({
     name: 'ls',
     summary: 'list files in the current directory',
-    manPage: 'SYNOPSIS\n' + 
-             '\tls [FILE] ...\n\n' +
-             'DESCRIPTION\n' + 
-             '\tList information about the FILEs ' +
-             '(the current directory by default).\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Richard Stallman and David MacKenzie.\n',
-    command: function(env, inputLine) {
-      $('#main-input').append($('<div>zebraGirl.jpg</div>'));
-    }
+    manPage:
+      'SYNOPSIS\n' +
+      '\tls [FILE] ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tList information about the FILEs (the current directory by default).\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Richard Stallman and David MacKenzie.\n',
+    execute: () => {
+      appendTextLine(dom.mainInput, 'zebraGirl.jpg');
+    },
   });
 
-  jpTerminal.addCommand({
+  registerCommand({
     name: 'display',
-    summary: 'display image files (hint: use ls to find a \'file\')',
-    manPage: 'SYNOPSIS\n' +
-             '\tdisplay file ...\n\n' +
-             'DESCRIPTION\n' +
-             '\tDisplay is a machine architecture independent image ' +
-             'processing and display\n\tprogram. It can ' +
-             '<strong>display</strong> an image on any workstation screen ' +
-             'running an X server.\n\n' +
-             'AUTHOR\n' +
-             '\tJohn Cristy, ImageMagick Studio.\n',
-      command: function(env, inputLine) {
-        const args = inputLine.trim().split(' ');
+    summary: "display image files (hint: use ls to find a 'file')",
+    manPage:
+      'SYNOPSIS\n' +
+      '\tdisplay file ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tDisplay is a machine architecture independent image processing and display\n\tprogram. It can <strong>display</strong> an image on any workstation screen running an X server.\n\n' +
+      'AUTHOR\n' +
+      '\tJohn Cristy, ImageMagick Studio.\n',
+    execute: (inputLine) => {
+      const args = inputLine.trim().split(/ +/);
 
-        if (args.length < 2) {
-          $('#main-input')
-            .append($('<span>display: no file specified</span>'));
-          return;
-        }
-
-        if (inputLine.match(/zebraGirl\.jpg/)) {
-          setTimeout(function() {
-            $('#zebra-girl').css('z-index', ++env.maxIndex);
-            $('#zebra-girl').show();
-            blurAllWindows();
-          }, 300);
-        }
+      if (args.length < 2) {
+        appendHtml(dom.mainInput, '<span>display: no file specified</span>');
+        return;
       }
+
+      if (/zebraGirl\.jpg/i.test(inputLine)) {
+        window.setTimeout(() => {
+          if (dom.zebraGirl) {
+            dom.zebraGirl.style.zIndex = String(nextZIndex());
+            dom.zebraGirl.style.display = 'block';
+            blurAllWindows();
+          }
+        }, 300);
+      }
+    },
   });
 
-  jpTerminal.addCommand({
+  registerCommand({
     name: 'keychecks',
     summary: 'display system level command history',
-    manPage: 'SYNOPSIS\n' +
-             '\tkeychecks\n\n' +
-             'DESCRIPTION\n' +
-             '\tA system level command log used for accountability ' +
-             'purposes. keychecks must be\n\tactivated or deactivated ' +
-             'via the main board.\n',
-    command: function(env, inputLine) {
-      const output =
-        '13,42,121,32,88,77,19,13,44,52,77,90,13,99,13,100,13,109,55,103,144,' +
-        '13,99,87,60,13,44,12,09,13,43,63,13,46,57,89,103,122,13,44,52,88,931,' +
-        '13,21,13,57,98,100,102,103,13,112,13,146,13,13,13,77,67,88,23,13,13\n' +
-        'system\n' +
-        'nedry\n' +
-        'go to command level\n' +
-        'nedry\n' +
-        '040/#xy/67&\n' +
-        'mr goodbytes\n' +
-        'security\n' +
-        'keycheck off\n' +
-        'safety off\n' +
-        'sl off\n' +
-        'security\n' +
-        'whte_rbt.obj\n';
-      $('#main-input').append(output);
-    }
+    manPage:
+      'SYNOPSIS\n' +
+      '\tkeychecks\n\n' +
+      'DESCRIPTION\n' +
+      '\tA system level command log used for accountability purposes. keychecks must be\n\tactivated or deactivated via the main board.\n',
+    execute: () => {
+      appendPreformatted(
+        dom.mainInput,
+        '13,42,121,32,88,77,19,13,44,52,77,90,13,99,13,100,13,109,55,103,144,13,99,87,60,13,44,12,09,13,43,63,13,46,57,89,103,122,13,44,52,88,931,13,21,13,57,98,100,102,103,13,112,13,146,13,13,13,77,67,88,23,13,13\nsystem\nnedry\ngo to command level\nnedry\n040/#xy/67&\nmr goodbytes\nsecurity\nkeycheck off\nsafety off\nsl off\nsecurity\nwhte_rbt.obj\n',
+      );
+    },
   });
 
-  jpTerminal.addCommand({
+  registerCommand({
     name: 'man',
     summary: 'display reference manual for a given command',
-    manPage: 'SYNOPSIS\n' +
-             '\tman title ...\n\n' +
-             'DESCRIPTION\n' +
-             '\tman locates and prints the titled entries from the on-line ' +
-             'reference manuals.\n',
-    command: function(env, inputLine) {
+    manPage:
+      'SYNOPSIS\n' +
+      '\tman title ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tman locates and prints the titled entries from the on-line reference manuals.\n',
+    execute: (inputLine) => {
       const arg = inputLine.trim().split(/ +/)[1] || '';
       let output = 'What manual page do you want?';
 
-      if (env.commands.hasOwnProperty(arg)) {
-        output = env.commands[arg].manPage;
-      } else if (arg) {
-        output = 'No manual entry for ' + $('<div/>').text(arg).html();
-      }
-
-      $('#main-input').append(output);
-    }
-  });
-
-  jpTerminal.addCommand({
-    name: 'help', 
-    summary: 'list available commands',
-    manPage: 'SYNOPSIS\n' +
-              '\thelp\n\n' +
-              'DESCRIPTION\n' +
-              '\tDisplay a command summary for Jurassic Systems.\n\n' +
-              'AUTHOR\n' +
-              '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
-    command: function(env, inputLine) {
-      for (var command in env.commands) {
-        env.active.find('.command-history')
-          .append($('<div>')
-          .text(
-            env.commands[command].name + 
-            ' - ' +
-            env.commands[command].summary)
-          );
-      }
-    }
-  });
-
-  // helpers
-  const flicker = function(altId, interval, duration) {
-    let visible = true;
-    const alt = $('#' + altId).show();
-    const flickering = setInterval(function() {
-      if (visible) {
-        alt.css('opacity', '1');
-      } else {
-        alt.css('opacity', '0');
-      }
-
-      visible = !visible;
-    }, interval);
-
-    setTimeout(function() {
-      clearInterval(flickering);
-      alt.css('opacity', '0');
-      alt.hide()
-    }, duration);
-  };
-
-  const blurAllWindows = function() {
-    $('.cursor', '.irix-window').removeClass('active-cursor');
-    $('.buffer').blur();
-  };
-
-  $(document).ready(function() {
-    // attempt to cache objects
-    $(['theKingBlur.jpg',
-      'theKingFocus.jpg',
-      'macHDBlur.jpg',
-      'asciiNewman.jpg',
-      'zebraGirlWindow.jpg',
-    ]).each(function() {
-      new Image().src = '/img/' + this;
-    });
-
-
-    // remove boot screen
-    setTimeout(function() {
-      $('#irix-boot').remove();
-      $('#main-buffer').focus();
-
-      if (!location.pathname.match(/system/)) {
-        $('#main-buffer').blur();
-        $('#intro').show();
-        $('#intro').click(function() {
-          $(this).fadeOut(1000);
-          $('#intro-scene').attr('src', '');
-        });
-      }
-    }, 4500);
-
-    $('body').click(blurAllWindows);
-
-    (function() {
-      let diffX = 0;
-      let diffY = 0;
-
-      $('.window-bar').mousedown(function(e) {
-        var dragging = $(this).parent()
-        .css('z-index', jpTerminal.nextIndex())
-        .addClass('dragging');
-      diffY = e.pageY - dragging.offset().top;
-      diffX = e.pageX - dragging.offset().left;
-      });
-
-      $('body').mousemove(function(e) {
-        $('.dragging').offset({
-          top: e.pageY - diffY,
-          left: e.pageX - diffX
-        });
-      });
-    }());
-
-    $('body').mouseup(function(e) {
-      $('.dragging').removeClass('dragging');
-    });
-
-    $('.irix-window').click(function(e) {
-      e.stopPropagation();
-      blurAllWindows();
-      jpTerminal.setActive(this);
-      $('.buffer', this).focus();
-      $(this).css('z-index', jpTerminal.nextIndex());
-      $(this).find('.cursor').addClass('active-cursor');
-    });
-
-    $(window).keydown(function(e) {
-      if ([37, 38, 39, 40].indexOf(e.keyCode || e.which) > -1) {
-        e.preventDefault();
-      }
-    });
-
-    $('.irix-window').keydown(function(e) {
-      const key = e.keyCode || e.which;
-      const activeTerminal = jpTerminal.getActive();
-
-      if (!activeTerminal) {
-        return false;
-      }
-
-      // if enter
-      if (key === 13) {
-        const line = activeTerminal.find('.buffer').val();
-        activeTerminal.find('.buffer').val('');
-
-        if (activeTerminal.attr('id') === 'chess-terminal') {
-          $('#curr-chess-input').html('');
-          activeTerminal.find('.command-history')
-            .append($('<div class="entered-command">')
-            .text(line || ' '));
+      if (arg) {
+        const match = resolveCommand(arg);
+        if (match) {
+          output = match.manPage;
         } else {
-          $('#curr-main-input').html('');
-          jpTerminal.buildCommandLine(line);
+          const safeArg = document.createElement('div');
+          safeArg.textContent = arg;
+          output = `No manual entry for ${safeArg.innerHTML}`;
         }
       }
 
-      const wrap = activeTerminal.find('.inner-wrap');
-      wrap.scrollTop(wrap[0].scrollHeight);
-    });
-
-    $('#main-terminal .buffer').bind('input propertychange', function() {
-      $('#curr-main-input').text($(this).val());
-    });
-
-    $('#chess-terminal .buffer').bind('input propertychange', function() {
-      $('#curr-chess-input').text($(this).val());
-    });
-
-    $('#apple-desktop').click(function(e){
-      if ($(e.target).closest('.mac-window').attr('id') !== 'the-king-window') {
-        flicker('the-king-blur', 50, 450);
-      }
-    });
+      appendHtml(dom.mainInput, output);
+    },
   });
-}(jQuery, soundManager));
+
+  registerCommand({
+    name: 'help',
+    summary: 'list available commands',
+    manPage:
+      'SYNOPSIS\n' +
+      '\thelp\n\n' +
+      'DESCRIPTION\n' +
+      '\tDisplay a command summary for Jurassic Systems.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
+    execute: () => {
+      for (const command of state.commands.values()) {
+        appendTextLine(
+          state.activeWindow.querySelector('.command-history'),
+          `${command.name} - ${command.summary}`,
+        );
+      }
+    },
+  });
+}
+
+function setupAppleDesktop() {
+  if (!dom.appleDesktop) {
+    return;
+  }
+
+  if (!dom.theKingBlur) {
+    return;
+  }
+
+  dom.appleDesktop.addEventListener('click', (event) => {
+    if (!dom.theKingWindow || !dom.theKingWindow.contains(event.target)) {
+      flicker(dom.theKingBlur, 50, 450);
+    }
+  });
+}
+
+function cacheAssets() {
+  [
+    'theKingBlur.jpg',
+    'theKingFocus.jpg',
+    'macHDBlur.jpg',
+    'asciiNewman.jpg',
+    'zebraGirlWindow.jpg',
+  ].forEach((file) => {
+    const img = new Image();
+    img.src = `/img/${file}`;
+  });
+}
+
+function removeBootScreen() {
+  window.setTimeout(() => {
+    if (dom.irixBoot && dom.irixBoot.parentElement) {
+      dom.irixBoot.parentElement.removeChild(dom.irixBoot);
+    }
+    dom.mainBuffer.focus();
+  }, 4500);
+}
+
+function initialiseZIndex() {
+  const windows = Array.from(document.querySelectorAll('.irix-window, .mac-window'));
+  const zIndices = windows
+    .map((element) => parseInt(window.getComputedStyle(element).zIndex || '0', 10))
+    .filter((value) => Number.isFinite(value));
+  state.maxZIndex = Math.max(2, ...zIndices);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  cacheAssets();
+  initialiseZIndex();
+  setupDragging();
+  setupWindowActivation();
+  setupBuffers();
+  createCommands();
+  setupAppleDesktop();
+  removeBootScreen();
+  setActiveWindow(dom.mainWindow);
+});
