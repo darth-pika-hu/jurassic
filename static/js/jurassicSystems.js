@@ -1,350 +1,569 @@
-(function($, sm) {
-  const jpTerminal = (function() {
-    const env = {
-      accessAttempts: 0,
-      active: null,
-      commands: {},
-      maxIndex: 1,
-      musicOn: false,
-      sounds: {},
-    };
-    const api = {};
+import { matchesAccessCommandName } from './commands/access.js';
 
-    api.buildCommandLine = function(line) {
-      const commandName = line.trim().split(/ /)[0];
-      const command =
-        env.commands[commandName] &&
-        env.commands[commandName].command;
+const mainTerminal = document.getElementById('main-terminal');
+const mainBuffer = document.getElementById('main-buffer');
+const mainInner = document.getElementById('main-inner');
+const mainOutput = document.getElementById('main-input');
+const mainPrompt = document.getElementById('main-prompt');
+const currMainInput = document.getElementById('curr-main-input');
+const chessBuffer = document.getElementById('chess-buffer');
+const chessInner = document.getElementById('chess-inner');
+const chessHistory = chessInner?.querySelector('.command-history');
+const currChessInput = document.getElementById('curr-chess-input');
 
-      env.active.find('.command-history')
-        .append($('<div class="entered-command">')
-        .text('> ' + line));
+const zebraGirl = document.getElementById('zebra-girl');
+const environmentEl = document.getElementById('environment');
+const irixDesktop = document.getElementById('irix-desktop');
+const appleDesktop = document.getElementById('apple-desktop');
+const macHdWindow = document.getElementById('mac-hd-window');
+const theKingWindow = document.getElementById('the-king-window');
+const theKingVideo = document.getElementById('the-king-video');
+const theKingBlur = document.getElementById('the-king-blur');
+const bootOverlay = document.getElementById('irix-boot');
 
-      if (command) {
-        command(env, line);
-      } else if (commandName) {
-        env.active.find('.command-history')
-          .append($('<div>').text(commandName + ': command not found'));
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const env = {
+  accessAttempts: 0,
+  active: null,
+  commands: [],
+  lockedDown: false,
+  maxIndex: 1,
+  musicOn: false,
+  sounds: null,
+};
+
+let errorSpamInterval = null;
+
+const buffers = [mainBuffer, chessBuffer].filter(Boolean);
+
+function createAudio(url, { loop = false } = {}) {
+  const audio = new Audio(url);
+  audio.preload = 'auto';
+  audio.loop = loop;
+
+  return {
+    element: audio,
+    play() {
+      audio.currentTime = 0;
+      const playResult = audio.play();
+      if (playResult && typeof playResult.catch === 'function') {
+        playResult.catch(() => {});
       }
+    },
+    stop() {
+      audio.pause();
+      audio.currentTime = 0;
+    },
+  };
+}
+
+function createSounds() {
+  return {
+    beep: createAudio('/snd/beep.mp3'),
+    lockDown: createAudio('/snd/lockDown.mp3'),
+    dennisMusic: createAudio('/snd/dennisMusic.mp3', { loop: true }),
+  };
+}
+
+function escapeHtml(value) {
+  const div = document.createElement('div');
+  div.textContent = value;
+  return div.innerHTML;
+}
+
+function appendElementToMain(element) {
+  mainOutput.append(element);
+  scrollMain();
+  return element;
+}
+
+function appendTextLine(text) {
+  const line = document.createElement('div');
+  line.textContent = text;
+  return appendElementToMain(line);
+}
+
+function appendSpan(text) {
+  const span = document.createElement('span');
+  span.textContent = text;
+  return appendElementToMain(span);
+}
+
+function appendHtml(html, tag = 'div') {
+  const container = document.createElement(tag);
+  container.innerHTML = html;
+  return appendElementToMain(container);
+}
+
+function appendManual(text) {
+  const html = text
+    .replace(/\n/g, '<br>')
+    .replace(/\t/g, '&nbsp;&nbsp;&nbsp;&nbsp;');
+  return appendHtml(html);
+}
+
+function scrollMain() {
+  if (mainInner) {
+    mainInner.scrollTop = mainInner.scrollHeight;
+  }
+}
+
+function scrollActive() {
+  if (!env.active) {
+    return;
+  }
+  const wrap = env.active.querySelector('.inner-wrap');
+  if (wrap) {
+    wrap.scrollTop = wrap.scrollHeight;
+  }
+}
+
+function addCommand({ name, summary, manPage, execute, matcher, aliases = [] }) {
+  const primary = name.trim().toLowerCase();
+  const aliasList = aliases.map(alias => alias.trim().toLowerCase());
+  const matches = matcher || (candidate => {
+    const normalized = candidate.trim().toLowerCase();
+    return normalized === primary || aliasList.includes(normalized);
+  });
+
+  env.commands.push({
+    name,
+    summary,
+    manPage,
+    execute,
+    matches,
+    primary,
+    aliases: aliasList,
+  });
+}
+
+function findCommand(name) {
+  if (!name) {
+    return undefined;
+  }
+  return env.commands.find(command => command.matches(name));
+}
+
+function createCommandContext(line) {
+  return {
+    appendHtml,
+    appendManual,
+    appendSpan,
+    appendTextLine,
+    appendElementToMain,
+    env,
+    line,
+    scrollActive,
+    scrollMain,
+    startLockdown,
+  };
+}
+
+function appendEnteredCommand(line) {
+  if (!env.active) {
+    return;
+  }
+  const history = env.active.querySelector('.command-history');
+  if (!history) {
+    return;
+  }
+  const entered = document.createElement('div');
+  entered.className = 'entered-command';
+  entered.textContent = `> ${line}`;
+  history.append(entered);
+}
+
+function buildCommandLine(line) {
+  appendEnteredCommand(line);
+
+  const trimmed = line.trim();
+  const commandName = trimmed.split(/\s+/)[0] || '';
+  const command = findCommand(commandName);
+
+  if (command) {
+    command.execute(createCommandContext(line));
+  } else if (commandName) {
+    appendTextLine(`${commandName}: command not found`);
+  }
+
+  scrollMain();
+  scrollActive();
+}
+
+function blurAllWindows() {
+  document.querySelectorAll('.cursor').forEach(cursor => {
+    cursor.classList.remove('active-cursor');
+  });
+  buffers.forEach(buffer => buffer && buffer.blur());
+  env.active = null;
+}
+
+function bringToFront(windowEl) {
+  env.maxIndex += 1;
+  windowEl.style.zIndex = String(env.maxIndex);
+}
+
+function setActiveWindow(windowEl) {
+  if (!windowEl) {
+    return;
+  }
+
+  if (env.active && env.active !== windowEl) {
+    env.active.querySelectorAll('.cursor').forEach(cursor => {
+      cursor.classList.remove('active-cursor');
+    });
+  }
+
+  env.active = windowEl;
+  bringToFront(windowEl);
+
+  const cursor = windowEl.querySelector('.cursor');
+  if (cursor) {
+    cursor.classList.add('active-cursor');
+  }
+
+  const buffer = windowEl.querySelector('.buffer');
+  if (buffer) {
+    buffer.focus({ preventScroll: true });
+    const valueLength = buffer.value.length;
+    buffer.setSelectionRange(valueLength, valueLength);
+  }
+}
+
+function setupDraggable(windowEl) {
+  const bar = windowEl.querySelector('.window-bar');
+  if (!bar) {
+    return;
+  }
+
+  let pointerId;
+  let offsetX = 0;
+  let offsetY = 0;
+
+  const handlePointerMove = event => {
+    if (pointerId !== event.pointerId) {
+      return;
+    }
+    const left = event.pageX - offsetX;
+    const top = event.pageY - offsetY;
+    windowEl.style.left = `${left}px`;
+    windowEl.style.top = `${top}px`;
+  };
+
+  const releasePointer = event => {
+    if (pointerId !== event.pointerId) {
+      return;
+    }
+    pointerId = undefined;
+    document.removeEventListener('pointermove', handlePointerMove);
+    document.removeEventListener('pointerup', releasePointer);
+    windowEl.classList.remove('dragging');
+    try {
+      bar.releasePointerCapture(event.pointerId);
+    } catch (error) {
+      // ignore release errors
+    }
+  };
+
+  bar.addEventListener('pointerdown', event => {
+    if (event.button !== 0) {
+      return;
+    }
+    pointerId = event.pointerId;
+    const rect = windowEl.getBoundingClientRect();
+    offsetX = event.pageX - (rect.left + window.scrollX);
+    offsetY = event.pageY - (rect.top + window.scrollY);
+    setActiveWindow(windowEl);
+    windowEl.classList.add('dragging');
+    bringToFront(windowEl);
+    bar.setPointerCapture(pointerId);
+    document.addEventListener('pointermove', handlePointerMove);
+    document.addEventListener('pointerup', releasePointer);
+    event.preventDefault();
+  });
+}
+
+function preloadImages(sources) {
+  sources.forEach(source => {
+    const img = new Image();
+    img.src = `/img/${source}`;
+  });
+}
+
+function flicker(element, interval, duration) {
+  if (!element) {
+    return;
+  }
+  let visible = false;
+  element.style.opacity = '0';
+  element.style.display = 'block';
+  const ticker = window.setInterval(() => {
+    visible = !visible;
+    element.style.opacity = visible ? '1' : '0';
+  }, interval);
+
+  window.setTimeout(() => {
+    window.clearInterval(ticker);
+    element.style.opacity = '0';
+    element.style.display = 'none';
+  }, duration);
+}
+
+function clearMagicWordSpam() {
+  if (errorSpamInterval !== null) {
+    window.clearInterval(errorSpamInterval);
+    errorSpamInterval = null;
+  }
+}
+
+function finalizeLockdownView() {
+  clearMagicWordSpam();
+  if (irixDesktop) {
+    irixDesktop.style.display = 'none';
+  }
+  if (macHdWindow) {
+    macHdWindow.style.backgroundImage = 'url(/img/macHDBlur.jpg)';
+  }
+  if (theKingWindow) {
+    theKingWindow.style.display = 'block';
+    bringToFront(theKingWindow);
+  }
+  if (theKingVideo) {
+    const playResult = theKingVideo.play();
+    if (playResult && typeof playResult.catch === 'function') {
+      playResult.catch(() => {
+        theKingVideo.muted = true;
+        theKingVideo.play().catch(() => {});
+      });
+    }
+  }
+}
+
+function startLockdown() {
+  if (env.lockedDown) {
+    return;
+  }
+
+  env.lockedDown = true;
+  buffers.forEach(buffer => {
+    buffer.disabled = true;
+    buffer.blur();
+  });
+  mainPrompt?.classList.add('hide');
+
+  window.setTimeout(() => {
+    appendSpan('...and...');
+  }, 200);
+
+  window.setTimeout(() => {
+    env.sounds.lockDown.play();
+  }, 1000);
+
+  window.setTimeout(() => {
+    errorSpamInterval = window.setInterval(() => {
+      appendTextLine("YOU DIDN'T SAY THE MAGIC WORD!");
+    }, 50);
+  }, 1000);
+
+  const shiftEnvironment = () => {
+    if (!environmentEl) {
+      finalizeLockdownView();
+      return;
     }
 
-    api.addCommand = function(details) {
-      if (
-        details.name &&
-        !env.commands.hasOwnProperty(details.name) &&
-        (details.command.constructor === Function)
-      ) {
-        env.commands[details.name] = details;
-      }
+    if (prefersReducedMotion || typeof environmentEl.animate !== 'function') {
+      environmentEl.style.transform = 'translateX(3000px)';
+      window.setTimeout(finalizeLockdownView, 2000);
+      return;
     }
 
-    api.setActive = function(active) {
-      env.active = $(active) || env.active;
-    }
+    const animation = environmentEl.animate(
+      [
+        { transform: 'translateX(0)' },
+        { transform: 'translateX(3000px)' },
+      ],
+      {
+        duration: 2000,
+        easing: 'ease-in-out',
+        fill: 'forwards',
+      },
+    );
 
-    api.getActive = function() {
-      return env.active;
-    }
+    animation.addEventListener('finish', () => {
+      window.setTimeout(finalizeLockdownView, 2000);
+    });
+    animation.addEventListener('cancel', () => {
+      window.setTimeout(finalizeLockdownView, 2000);
+    });
+  };
 
-    api.nextIndex = function() {
-      return ++env.maxIndex;
-    }
+  window.setTimeout(shiftEnvironment, 4000);
+}
 
-    api.init = function() {
-      // HTML5 audio element detection
-      if (Modernizr.audio.mp3 || Modernizr.audio.wav || Modernizr.audio.ogg) {
-        const beepHTML5 = $('<audio preload="auto"/>');
-        const lockDownHTML5 = $('<audio preload="auto"/>');
-        const dennisMusicHTML5 = $('<audio preload="auto"/>');
-
-        beepHTML5.append('<source src="/snd/beep.ogg">');
-        beepHTML5.append('<source src="/snd/beep.mp3">');
-        beepHTML5.append('<source src="/snd/beep.wav">');
-
-        lockDownHTML5.append('<source src="/snd/lockDown.ogg">');
-        lockDownHTML5.append('<source src="/snd/lockDown.mp3">');
-        lockDownHTML5.append('<source src="/snd/lockDown.wav">');
-
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.ogg">');
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.mp3">');
-        dennisMusicHTML5.append('<source src="/snd/dennisMusic.wav">');
-
-        env.sounds.beep = {
-          play: function() {
-            beepHTML5[0].load();
-            beepHTML5[0].play();
-          }
-        };
-
-        env.sounds.lockDown = {
-          play: function() {
-            lockDownHTML5[0].load();
-            lockDownHTML5[0].play();
-          }
-        };
-
-        env.sounds.dennisMusic = {
-          play: function() {
-            dennisMusicHTML5[0].load();
-            dennisMusicHTML5[0].play();
-          },
-          stop: function() {
-            dennisMusicHTML5[0].pause();
-          },
-        };
-
-        dennisMusicHTML5.bind('ended', function() {
-          env.sounds.dennisMusic.play();
-        });
-      }  else {
-        sm.setup({ 
-          url: '/swf/soundManager/',
-          onready: function() {
-            env.sounds.beep = sm.createSound({
-              autoLoad: true,
-              id: 'beep',
-              url: '/snd/beep.mp3',
-            });
-
-            env.sounds.lockDown = sm.createSound({
-              autoLoad: true,
-              id: 'lockDown',
-              url: '/snd/lockDown.mp3',
-            });
-
-            env.sounds.dennisMusic = sm.createSound({
-              autoLoad: true,
-              id: 'dennisMusic',
-              onfinish: function() {
-                sm.play('dennisMusic');
-              },
-              url: '/snd/dennisMusic.mp3',
-            });
-          },
-        });
-      }
-    };
-
-    return api;
-  }());
-
-  jpTerminal.init();
-  jpTerminal.setActive('#main-terminal');
-
-  jpTerminal.addCommand({
+function setupMainTerminalCommands() {
+  addCommand({
     name: 'music',
     summary: 'turn background music on or off',
-    manPage: 'SYNOPSIS\n' + 
-             '\tmusic [on|off]\n\n' + 
-             'DESCRIPTION\n' + 
-             '\tManage the state of the \'Dennis Steals the Embryo\' ' +
-             'music. Use the \'on\' state for\n\tincreased epicness.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
-    command: function(env, inputLine) {
-      const arg = inputLine.trim().split(/ +/)[1] || '';
-      const output = $('<span/>').text('music: must specify state [on|off]');
+    manPage: 'SYNOPSIS\n' +
+      '\tmusic [on|off]\n\n' +
+      'DESCRIPTION\n' +
+      '\tManage the state of the \'Dennis Steals the Embryo\' ' +
+      'music. Use the \'on\' state for\n\tincreased epicness.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
+    execute: ({ env, line, appendTextLine }) => {
+      const arg = line.trim().split(/ +/)[1] || '';
+      if (!arg || !/^(?:on|off)$/i.test(arg)) {
+        appendTextLine('music: must specify state [on|off]');
+        return;
+      }
 
-      if (!arg || !arg.match(/^(?:on|off)$/i)) {
-        $('#main-input').append(output);
-      } else {
-        if (arg.toLowerCase() === 'on') {
-          if (!env.musicOn) {
-            env.sounds.dennisMusic.play();
-          }
-          env.musicOn = true;
-        } else if (arg.toLowerCase() === 'off') {
-          env.sounds.dennisMusic.stop();
-          env.musicOn = false;
+      if (arg.toLowerCase() === 'on') {
+        if (!env.musicOn) {
+          env.sounds.dennisMusic.play();
         }
+        env.musicOn = true;
+      } else {
+        env.sounds.dennisMusic.stop();
+        env.musicOn = false;
       }
     },
   });
 
-  jpTerminal.addCommand({
-    name: 'access', 
+  addCommand({
+    name: 'access',
     summary: 'access a target environment on the Jurassic Systems grid',
     manPage: 'SYNOPSIS\n' +
-             '\taccess [SYSTEM_NAME] [MAGIC_WORD]\n\n' +
-             'DESCRIPTION\n' + 
-             '\tGain read and write access to a specified environment.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Dennis Nedry.\n',
-    command: function(env, inputLine) {
-      const output = $('<span>').text('access: PERMISSION DENIED.');
-      const arg = inputLine.split(/ +/)[1] || '';
-      const magicWord =
-        inputLine.substring(inputLine.trim().lastIndexOf(' ')) || '';
-
-      if (arg === '') {
-        $('#main-input').append($('<span/>')
-          .text('access: must specify target system'));
-
-        return;
-      } else if (
-        inputLine.split(' ').length > 2 &&
-        magicWord.trim() === 'please'
-      ) {
-        $('#main-input')
-          .append($('<img id="asciiNewman" src="/img/asciiNewman.jpg" />'));
-        $('#asciiNewman').load(function() {
-          const wrap = $('.inner-wrap', env.active);
-          wrap.scrollTop(wrap[0].scrollHeight);
-        });
-
+      '\taccess [SYSTEM_NAME] [MAGIC_WORD]\n\n' +
+      'DESCRIPTION\n' +
+      '\tGain read and write access to a specified environment.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Dennis Nedry.\n',
+    matcher: matchesAccessCommandName,
+    execute: ({ env, line, appendSpan, appendTextLine, appendElementToMain }) => {
+      const tokens = line.trim().split(/ +/);
+      const arg = tokens[1] || '';
+      if (!arg) {
+        appendTextLine('access: must specify target system');
         return;
       }
 
-      $('#main-input').append(output);
+      const magicWord = tokens.length > 2 ? tokens[tokens.length - 1] : '';
+      if (tokens.length > 2 && magicWord.toLowerCase() === 'please') {
+        const ascii = document.createElement('img');
+        ascii.id = 'asciiNewman';
+        ascii.src = '/img/asciiNewman.jpg';
+        ascii.alt = 'Dennis Nedry ASCII art';
+        ascii.addEventListener('load', scrollMain);
+        appendElementToMain(ascii);
+        return;
+      }
+
+      appendSpan('access: PERMISSION DENIED.');
+      env.sounds.beep.play();
+      env.accessAttempts += 1;
+      if (env.accessAttempts >= 3) {
+        startLockdown();
+      }
+    },
+  });
+
+  addCommand({
+    name: 'system',
+    summary: "check a system's current status",
+    manPage: 'SYNOPSIS\n' +
+      '\tsystem [SYSTEM_NAME]\n\n' +
+      'DESCRIPTION\n' +
+      "\tCheck the input system and return each sector's " +
+      'current status.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Dennis Nedry.\n',
+    execute: ({ line, appendHtml, appendTextLine, scrollMain, scrollActive }) => {
+      const arg = line.split(/ +/)[1] || '';
+      if (!arg) {
+        appendHtml('<span>system: must specify target system</span>');
+        return;
+      }
+
+      let system = arg.replace(/s$/, '');
+      system = system.charAt(0).toUpperCase() + system.slice(1);
+      const safeSystem = escapeHtml(system);
+      const tableHtml = '<div>' + safeSystem + ' containment enclosure....</div>' +
+        '<table id="system-output"><tbody>' +
+        '<tr><td>Security</td><td>[OK]</td></tr>' +
+        '<tr><td>Fence</td><td>[OK]</td></tr>' +
+        '<tr><td>Feeding Pavilion</td><td>[OK]</td></tr>' +
+        '</tbody></table>';
+
+      mainPrompt?.classList.add('hide');
+      appendHtml(tableHtml);
       env.sounds.beep.play();
 
-      if (++env.accessAttempts >= 3) {
-        const andMessage = $('<span>').text('...and...');
-        let errorSpam;
-
-        $('.irix-window').unbind('keydown');
-        $('#main-prompt').addClass('hide');
-
-        setTimeout(function() {
-          $('#main-input').append(andMessage);
-        }, 200);
-
-        setTimeout(function() {
-          env.sounds.lockDown.play();
-        }, 1000);
-
-        setTimeout(function() {
-          $('#environment').animate(
-            {'left': '+=3000'},
-            2000,
-            function() {
-              setTimeout(function() {
-                const theKingVideo = document.getElementById('the-king-video');
-
-                errorSpam != null && clearInterval(errorSpam);
-                theKingVideo != null && theKingVideo.play();
-                $('#irix-desktop').hide();
-                $('#mac-hd-window').css('background-image', 'url(/img/macHDBlur.jpg)');
-                $('#the-king-window').show();
-
-                setTimeout(function() {
-                  $('#home-key').css('z-index', '64000');
-                }, 10000);
-              }, 2000);
-            },
-          );
-        }, 4000);
-
-        setTimeout(function() {
-          errorSpam = setInterval(function() {
-            var errorMessage = $('<div>YOU DIDN\'T SAY THE MAGIC WORD!</div>');
-            $('#main-input').append(errorMessage);
-            $('#main-inner').scrollTop($('#main-inner')[0].scrollHeight);
-          }, 50);
-        }, 1000);
-      }
-    }
-  });
-
-  jpTerminal.addCommand({
-    name: 'system',
-    summary: 'check a system\'s current status',
-    manPage: 'SYNOPSIS\n' +
-             '\tsystem [SYSTEM_NAME]\n\n' +
-             'DESCRIPTION\n' +
-             '\tCheck the input system and return each sector\'s ' +
-             'current status.\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Dennis Nedry.\n',
-    command: function(env, inputLine) {
-      const arg = inputLine.split(/ +/)[1] || '';
-      let output = '<span>system: must specify target system</span>';
-
-      if (arg.length > 0) {
-        let system = arg.replace(/s$/, '');
-        system = system[0].toUpperCase() + system.slice(1);
-        system = $('<div/>').text(system).html();
-        output = '<div>' + system + ' containment enclosure....</div>' +
-                 '<table id="system-output"><tbody>' +
-                 '<tr><td>Security</td><td>[OK]</td></tr>' +
-                 '<tr><td>Fence</td><td>[OK]</td></tr>' +
-                 '<tr><td>Feeding Pavilion</td><td>[OK]</td></tr>' +
-                 '</tbody></table>';
-
-        $('#main-prompt').addClass('hide');
-        $('#main-input').append($(output));
-        output = '<div>System Halt!</div>';
+      window.setTimeout(() => {
         env.sounds.beep.play();
-
-        setTimeout(function() {
-          const wrap = $('.inner-wrap', env.active);
-          env.sounds.beep.play();
-          $('#main-input').append($(output));
-          wrap.scrollTop(wrap[0].scrollHeight);
-          $('#main-prompt').removeClass('hide');
-        }, 900);
-      } else {
-        $('#main-input').append($(output));
-      }
-    }
+        appendHtml('<div>System Halt!</div>');
+        mainPrompt?.classList.remove('hide');
+        scrollMain();
+        scrollActive();
+      }, 900);
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
     name: 'ls',
     summary: 'list files in the current directory',
-    manPage: 'SYNOPSIS\n' + 
-             '\tls [FILE] ...\n\n' +
-             'DESCRIPTION\n' + 
-             '\tList information about the FILEs ' +
-             '(the current directory by default).\n\n' +
-             'AUTHOR\n' +
-             '\tWritten by Richard Stallman and David MacKenzie.\n',
-    command: function(env, inputLine) {
-      $('#main-input').append($('<div>zebraGirl.jpg</div>'));
-    }
-  });
-
-  jpTerminal.addCommand({
-    name: 'display',
-    summary: 'display image files (hint: use ls to find a \'file\')',
     manPage: 'SYNOPSIS\n' +
-             '\tdisplay file ...\n\n' +
-             'DESCRIPTION\n' +
-             '\tDisplay is a machine architecture independent image ' +
-             'processing and display\n\tprogram. It can ' +
-             '<strong>display</strong> an image on any workstation screen ' +
-             'running an X server.\n\n' +
-             'AUTHOR\n' +
-             '\tJohn Cristy, ImageMagick Studio.\n',
-      command: function(env, inputLine) {
-        const args = inputLine.trim().split(' ');
-
-        if (args.length < 2) {
-          $('#main-input')
-            .append($('<span>display: no file specified</span>'));
-          return;
-        }
-
-        if (inputLine.match(/zebraGirl\.jpg/)) {
-          setTimeout(function() {
-            $('#zebra-girl').css('z-index', ++env.maxIndex);
-            $('#zebra-girl').show();
-            blurAllWindows();
-          }, 300);
-        }
-      }
+      '\tls [FILE] ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tList information about the FILEs ' +
+      '(the current directory by default).\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by Richard Stallman and David MacKenzie.\n',
+    execute: ({ appendTextLine }) => {
+      appendTextLine('zebraGirl.jpg');
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
+    name: 'display',
+    summary: "display image files (hint: use ls to find a 'file')",
+    manPage: 'SYNOPSIS\n' +
+      '\tdisplay file ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tDisplay is a machine architecture independent image ' +
+      'processing and display\n\tprogram. It can ' +
+      '<strong>display</strong> an image on any workstation screen ' +
+      'running an X server.\n\n' +
+      'AUTHOR\n' +
+      '\tJohn Cristy, ImageMagick Studio.\n',
+    execute: ({ line, appendTextLine }) => {
+      const args = line.trim().split(' ');
+      if (args.length < 2) {
+        appendTextLine('display: no file specified');
+        return;
+      }
+
+      if (/zebraGirl\.jpg/i.test(line) && zebraGirl) {
+        window.setTimeout(() => {
+          zebraGirl.style.zIndex = String(++env.maxIndex);
+          zebraGirl.style.display = 'block';
+          blurAllWindows();
+        }, 300);
+      }
+    },
+  });
+
+  addCommand({
     name: 'keychecks',
     summary: 'display system level command history',
     manPage: 'SYNOPSIS\n' +
-             '\tkeychecks\n\n' +
-             'DESCRIPTION\n' +
-             '\tA system level command log used for accountability ' +
-             'purposes. keychecks must be\n\tactivated or deactivated ' +
-             'via the main board.\n',
-    command: function(env, inputLine) {
+      '\tkeychecks\n\n' +
+      'DESCRIPTION\n' +
+      '\tA system level command log used for accountability ' +
+      'purposes. keychecks must be\n\tactivated or deactivated ' +
+      'via the main board.\n',
+    execute: ({ appendTextLine }) => {
       const output =
         '13,42,121,32,88,77,19,13,44,52,77,90,13,99,13,100,13,109,55,103,144,' +
         '13,99,87,60,13,44,12,09,13,43,63,13,46,57,89,103,122,13,44,52,88,931,' +
@@ -361,188 +580,144 @@
         'sl off\n' +
         'security\n' +
         'whte_rbt.obj\n';
-      $('#main-input').append(output);
-    }
+      appendTextLine(output);
+    },
   });
 
-  jpTerminal.addCommand({
+  addCommand({
     name: 'man',
     summary: 'display reference manual for a given command',
     manPage: 'SYNOPSIS\n' +
-             '\tman title ...\n\n' +
-             'DESCRIPTION\n' +
-             '\tman locates and prints the titled entries from the on-line ' +
-             'reference manuals.\n',
-    command: function(env, inputLine) {
-      const arg = inputLine.trim().split(/ +/)[1] || '';
-      let output = 'What manual page do you want?';
-
-      if (env.commands.hasOwnProperty(arg)) {
-        output = env.commands[arg].manPage;
-      } else if (arg) {
-        output = 'No manual entry for ' + $('<div/>').text(arg).html();
+      '\tman title ...\n\n' +
+      'DESCRIPTION\n' +
+      '\tman locates and prints the titled entries from the on-line ' +
+      'reference manuals.\n',
+    execute: ({ line, appendManual, appendTextLine }) => {
+      const arg = line.trim().split(/ +/)[1] || '';
+      if (!arg) {
+        appendTextLine('What manual page do you want?');
+        return;
       }
 
-      $('#main-input').append(output);
-    }
+      const command = findCommand(arg);
+      if (command) {
+        appendManual(command.manPage);
+      } else {
+        appendTextLine(`No manual entry for ${arg}`);
+      }
+    },
   });
 
-  jpTerminal.addCommand({
-    name: 'help', 
+  addCommand({
+    name: 'help',
     summary: 'list available commands',
     manPage: 'SYNOPSIS\n' +
-              '\thelp\n\n' +
-              'DESCRIPTION\n' +
-              '\tDisplay a command summary for Jurassic Systems.\n\n' +
-              'AUTHOR\n' +
-              '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
-    command: function(env, inputLine) {
-      for (var command in env.commands) {
-        env.active.find('.command-history')
-          .append($('<div>')
-          .text(
-            env.commands[command].name + 
-            ' - ' +
-            env.commands[command].summary)
-          );
-      }
-    }
+      '\thelp\n\n' +
+      'DESCRIPTION\n' +
+      '\tDisplay a command summary for Jurassic Systems.\n\n' +
+      'AUTHOR\n' +
+      '\tWritten by <a href="https://tully.io">Tully Robinson</a>.\n',
+    execute: ({ appendTextLine }) => {
+      env.commands.forEach(command => {
+        appendTextLine(`${command.name} - ${command.summary}`);
+      });
+    },
+  });
+}
+
+function setupEventHandlers() {
+  document.body.addEventListener('click', blurAllWindows);
+
+  [...document.querySelectorAll('.irix-window, .mac-window')].forEach(windowEl => {
+    windowEl.addEventListener('click', event => {
+      event.stopPropagation();
+      setActiveWindow(windowEl);
+    });
+    windowEl.addEventListener('pointerdown', () => setActiveWindow(windowEl));
+    windowEl.addEventListener('focus', () => setActiveWindow(windowEl));
+    setupDraggable(windowEl);
   });
 
-  // helpers
-  const flicker = function(altId, interval, duration) {
-    let visible = true;
-    const alt = $('#' + altId).show();
-    const flickering = setInterval(function() {
-      if (visible) {
-        alt.css('opacity', '1');
-      } else {
-        alt.css('opacity', '0');
-      }
-
-      visible = !visible;
-    }, interval);
-
-    setTimeout(function() {
-      clearInterval(flickering);
-      alt.css('opacity', '0');
-      alt.hide()
-    }, duration);
-  };
-
-  const blurAllWindows = function() {
-    $('.cursor', '.irix-window').removeClass('active-cursor');
-    $('.buffer').blur();
-  };
-
-  $(document).ready(function() {
-    // attempt to cache objects
-    $(['theKingBlur.jpg',
-      'theKingFocus.jpg',
-      'macHDBlur.jpg',
-      'asciiNewman.jpg',
-      'zebraGirlWindow.jpg',
-    ]).each(function() {
-      new Image().src = '/img/' + this;
+  if (mainBuffer) {
+    mainBuffer.addEventListener('input', () => {
+      currMainInput.textContent = mainBuffer.value;
     });
 
-
-    // remove boot screen
-    setTimeout(function() {
-      $('#irix-boot').remove();
-      $('#main-buffer').focus();
-
-      if (!location.pathname.match(/system/)) {
-        $('#main-buffer').blur();
-        $('#intro').show();
-        $('#intro').click(function() {
-          $(this).fadeOut(1000);
-          $('#intro-scene').attr('src', '');
-        });
-      }
-    }, 4500);
-
-    $('body').click(blurAllWindows);
-
-    (function() {
-      let diffX = 0;
-      let diffY = 0;
-
-      $('.window-bar').mousedown(function(e) {
-        var dragging = $(this).parent()
-        .css('z-index', jpTerminal.nextIndex())
-        .addClass('dragging');
-      diffY = e.pageY - dragging.offset().top;
-      diffX = e.pageX - dragging.offset().left;
-      });
-
-      $('body').mousemove(function(e) {
-        $('.dragging').offset({
-          top: e.pageY - diffY,
-          left: e.pageX - diffX
-        });
-      });
-    }());
-
-    $('body').mouseup(function(e) {
-      $('.dragging').removeClass('dragging');
-    });
-
-    $('.irix-window').click(function(e) {
-      e.stopPropagation();
-      blurAllWindows();
-      jpTerminal.setActive(this);
-      $('.buffer', this).focus();
-      $(this).css('z-index', jpTerminal.nextIndex());
-      $(this).find('.cursor').addClass('active-cursor');
-    });
-
-    $(window).keydown(function(e) {
-      if ([37, 38, 39, 40].indexOf(e.keyCode || e.which) > -1) {
-        e.preventDefault();
-      }
-    });
-
-    $('.irix-window').keydown(function(e) {
-      const key = e.keyCode || e.which;
-      const activeTerminal = jpTerminal.getActive();
-
-      if (!activeTerminal) {
-        return false;
+    mainBuffer.addEventListener('keydown', event => {
+      if (env.lockedDown) {
+        event.preventDefault();
+        return;
       }
 
-      // if enter
-      if (key === 13) {
-        const line = activeTerminal.find('.buffer').val();
-        activeTerminal.find('.buffer').val('');
+      if (event.key === 'Enter') {
+        const line = mainBuffer.value;
+        mainBuffer.value = '';
+        currMainInput.textContent = '';
+        buildCommandLine(line);
+      }
+    });
+  }
 
-        if (activeTerminal.attr('id') === 'chess-terminal') {
-          $('#curr-chess-input').html('');
-          activeTerminal.find('.command-history')
-            .append($('<div class="entered-command">')
-            .text(line || ' '));
-        } else {
-          $('#curr-main-input').html('');
-          jpTerminal.buildCommandLine(line);
+  if (chessBuffer && chessHistory) {
+    chessBuffer.addEventListener('input', () => {
+      currChessInput.textContent = chessBuffer.value;
+    });
+
+    chessBuffer.addEventListener('keydown', event => {
+      if (env.lockedDown) {
+        event.preventDefault();
+        return;
+      }
+
+      if (event.key === 'Enter') {
+        const line = chessBuffer.value;
+        chessBuffer.value = '';
+        currChessInput.textContent = '';
+        const entry = document.createElement('div');
+        entry.className = 'entered-command';
+        entry.textContent = line || ' ';
+        chessHistory.append(entry);
+        if (chessInner) {
+          chessInner.scrollTop = chessInner.scrollHeight;
         }
       }
-
-      const wrap = activeTerminal.find('.inner-wrap');
-      wrap.scrollTop(wrap[0].scrollHeight);
     });
+  }
 
-    $('#main-terminal .buffer').bind('input propertychange', function() {
-      $('#curr-main-input').text($(this).val());
-    });
+  window.addEventListener('keydown', event => {
+    const arrowKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'];
+    if (arrowKeys.includes(event.key)) {
+      event.preventDefault();
+    }
+  }, { passive: false });
 
-    $('#chess-terminal .buffer').bind('input propertychange', function() {
-      $('#curr-chess-input').text($(this).val());
-    });
-
-    $('#apple-desktop').click(function(e){
-      if ($(e.target).closest('.mac-window').attr('id') !== 'the-king-window') {
-        flicker('the-king-blur', 50, 450);
+  if (appleDesktop && theKingBlur) {
+    appleDesktop.addEventListener('click', event => {
+      if (event.target.closest('#the-king-window')) {
+        return;
       }
+      flicker(theKingBlur, 50, 450);
     });
-  });
-}(jQuery, soundManager));
+  }
+}
+
+function init() {
+  env.sounds = createSounds();
+  setupMainTerminalCommands();
+  setupEventHandlers();
+  setActiveWindow(mainTerminal);
+  preloadImages([
+    'theKingBlur.jpg',
+    'theKingFocus.jpg',
+    'macHDBlur.jpg',
+    'asciiNewman.jpg',
+    'zebraGirlWindow.jpg',
+  ]);
+
+  window.setTimeout(() => {
+    bootOverlay?.remove();
+    mainBuffer?.focus({ preventScroll: true });
+  }, 4500);
+}
+
+init();
