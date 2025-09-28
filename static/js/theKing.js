@@ -113,142 +113,237 @@ if (theKingWindow) {
   setupDraggable(theKingWindow);
 }
 
-function attemptVideoPlayback(video) {
+function initializeTheKingVideo(video) {
   if (!video) {
     return;
   }
 
-  let recovered = false;
-  let restoreTimer;
-  const gestureHandlers = new Map();
+  const activationEvents = ['pointerdown', 'touchstart', 'keydown'];
+  const activationHandlers = new Map();
+  let activationCallback = null;
+  let awaitingAudioUnlock = false;
+  let pendingPlay = null;
+  let audioRetryTimer = null;
 
-  const clearGestureHandlers = () => {
-    gestureHandlers.forEach((handler, eventName) => {
-      window.removeEventListener(eventName, handler);
-    });
-    gestureHandlers.clear();
+  const ensureAttributes = () => {
+    video.autoplay = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.setAttribute('autoplay', '');
+    video.setAttribute('loop', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
   };
 
-  const markRecovered = () => {
-    if (recovered) {
-      return;
-    }
-    recovered = true;
-    if (restoreTimer) {
-      window.clearInterval(restoreTimer);
-      restoreTimer = undefined;
-    }
-    clearGestureHandlers();
-    video.muted = false;
-    video.volume = 1;
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    video.removeEventListener('timeupdate', handleProgressAttempt);
-    video.removeEventListener('playing', handlePlaying);
-  };
-
-  const tryPlay = () => {
-    const result = video.play();
-    if (!result || typeof result.then !== 'function') {
-      return Promise.resolve();
-    }
-    return result;
-  };
-
-  const playUnmuted = () => {
-    video.muted = false;
-    video.volume = Math.max(video.volume, 1);
-    return tryPlay().then(() => {
-      if (!video.muted) {
-        markRecovered();
-      }
-    });
-  };
-
-  const playMuted = () => {
+  const configureMuted = () => {
+    video.defaultMuted = true;
     video.muted = true;
-    return tryPlay();
+    if (!video.hasAttribute('muted')) {
+      video.setAttribute('muted', '');
+    }
   };
 
-  const scheduleAutoRestore = () => {
-    if (restoreTimer || recovered) {
-      return;
+  const configureUnmuted = () => {
+    video.defaultMuted = false;
+    video.muted = false;
+    if (video.hasAttribute('muted')) {
+      video.removeAttribute('muted');
     }
-    restoreTimer = window.setInterval(() => {
-      if (video.paused) {
-        return;
+    if (typeof video.volume === 'number' && video.volume < 1) {
+      try {
+        video.volume = 1;
+      } catch (error) {
+        // Ignore platforms that disallow programmatic volume changes.
       }
-      playUnmuted().catch(() => {
-        video.muted = true;
-      });
-    }, 1500);
+    }
   };
 
-  const onUserGesture = () => {
-    if (recovered) {
-      return;
-    }
-    clearGestureHandlers();
-    playUnmuted().catch(() => {
-      video.muted = true;
-      scheduleAutoRestore();
-      bindGestureRecovery();
+  const clearActivationHandlers = () => {
+    activationHandlers.forEach((handler, eventName) => {
+      window.removeEventListener(eventName, handler, { capture: true });
     });
+    activationHandlers.clear();
+    activationCallback = null;
   };
 
-  function bindGestureRecovery() {
-    if (recovered) {
+  const requestActivation = callback => {
+    if (activationCallback === callback) {
       return;
     }
-    ['pointerdown', 'keydown'].forEach(eventName => {
-      if (gestureHandlers.has(eventName)) {
-        return;
-      }
+    clearActivationHandlers();
+    activationCallback = callback;
+    activationEvents.forEach(eventName => {
       const handler = () => {
-        onUserGesture();
+        clearActivationHandlers();
+        callback();
       };
-      gestureHandlers.set(eventName, handler);
-      window.addEventListener(eventName, handler);
+      activationHandlers.set(eventName, handler);
+      window.addEventListener(eventName, handler, {
+        capture: true,
+        once: true,
+        passive: true,
+      });
     });
-  }
+  };
 
-  function handleVisibilityChange() {
-    if (document.visibilityState === 'visible' && !recovered) {
-      playUnmuted().catch(() => {
-        video.muted = true;
+  const scheduleAudioRecovery = () => {
+    if (!awaitingAudioUnlock) {
+      return;
+    }
+    if (audioRetryTimer !== null) {
+      return;
+    }
+    audioRetryTimer = window.setTimeout(() => {
+      audioRetryTimer = null;
+      if (!awaitingAudioUnlock) {
+        return;
+      }
+      playVideo({
+        mutedFallbackAllowed: false,
+        startMuted: false,
+      }).catch(error => {
+        if (error && error.name !== 'NotAllowedError') {
+          scheduleAudioRecovery();
+        }
       });
-    }
-  }
+    }, 250);
+  };
 
-  function handleProgressAttempt() {
-    if (!recovered && video.currentTime > 0.25) {
-      playUnmuted().catch(() => {
-        video.muted = true;
+  const playVideoInternal = async ({
+    mutedFallbackAllowed,
+    startMuted,
+  }) => {
+    ensureAttributes();
+
+    if (startMuted) {
+      configureMuted();
+    } else {
+      configureUnmuted();
+    }
+
+    try {
+      await video.play();
+    } catch (error) {
+      if (error && error.name === 'NotAllowedError') {
+        if (!startMuted && mutedFallbackAllowed) {
+          await playVideoInternal({
+            mutedFallbackAllowed: false,
+            startMuted: true,
+          });
+          return;
+        }
+
+        configureMuted();
+        awaitingAudioUnlock = true;
+        requestActivation(() => {
+          playVideo({
+            mutedFallbackAllowed: false,
+            startMuted: false,
+          }).catch(() => {});
+        });
+      }
+      throw error;
+    }
+
+    if (video.muted) {
+      awaitingAudioUnlock = true;
+      scheduleAudioRecovery();
+    } else {
+      awaitingAudioUnlock = false;
+      clearActivationHandlers();
+    }
+  };
+
+  const playVideo = (options = {}) => {
+    if (pendingPlay) {
+      return pendingPlay;
+    }
+
+    const mergedOptions = {
+      mutedFallbackAllowed: true,
+      startMuted: false,
+      ...options,
+    };
+
+    pendingPlay = playVideoInternal(mergedOptions)
+      .catch(error => {
+        throw error;
+      })
+      .finally(() => {
+        pendingPlay = null;
       });
-    }
-  }
 
-  function handlePlaying() {
-    if (!video.muted) {
-      markRecovered();
+    return pendingPlay;
+  };
+
+  const resumePlayback = () => {
+    playVideo().catch(() => {});
+  };
+
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'visible') {
+      resumePlayback();
+      if (awaitingAudioUnlock) {
+        scheduleAudioRecovery();
+      }
     }
-  }
+  };
+
+  const handlePause = () => {
+    if (video.ended) {
+      return;
+    }
+    resumePlayback();
+  };
+
+  const handleEnded = () => {
+    if (!video.loop) {
+      video.currentTime = 0;
+    }
+    resumePlayback();
+  };
+
+  const handleStall = () => {
+    if (video.paused || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      resumePlayback();
+    }
+  };
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  video.addEventListener('timeupdate', handleProgressAttempt);
-  video.addEventListener('playing', handlePlaying);
+  video.addEventListener('pause', handlePause);
+  video.addEventListener('ended', handleEnded);
+  video.addEventListener('stalled', handleStall);
+  video.addEventListener('suspend', handleStall);
+  video.addEventListener('waiting', handleStall);
+  video.addEventListener('emptied', handleStall);
+  video.addEventListener('playing', () => {
+    if (awaitingAudioUnlock) {
+      scheduleAudioRecovery();
+    }
+  });
+  video.addEventListener('timeupdate', () => {
+    if (awaitingAudioUnlock) {
+      scheduleAudioRecovery();
+    }
+  });
+  video.addEventListener('loadeddata', () => {
+    if (awaitingAudioUnlock) {
+      scheduleAudioRecovery();
+    }
+  });
+  video.addEventListener('volumechange', () => {
+    if (!video.muted) {
+      awaitingAudioUnlock = false;
+      clearActivationHandlers();
+    }
+  });
 
-  playUnmuted()
-    .catch(() => {
-      playMuted()
-        .then(() => {
-          scheduleAutoRestore();
-          bindGestureRecovery();
-        })
-        .catch(() => {
-          scheduleAutoRestore();
-          bindGestureRecovery();
-        });
-    });
+  ensureAttributes();
+  resumePlayback();
+}
+
+if (theKingVideo) {
+  initializeTheKingVideo(theKingVideo);
 }
 
 window.setTimeout(() => {
@@ -258,11 +353,6 @@ window.setTimeout(() => {
   if (theKingWindow) {
     theKingWindow.style.display = 'block';
     bringToFront(theKingWindow);
-  }
-  if (theKingVideo) {
-    theKingVideo.autoplay = true;
-    theKingVideo.setAttribute('autoplay', '');
-    attemptVideoPlayback(theKingVideo);
   }
 }, 2500);
 
