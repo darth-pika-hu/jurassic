@@ -88,22 +88,73 @@ body {
 #the-king-audio-gate {
   position: absolute;
   left: 50%;
-  bottom: 32px;
+  bottom: 36px;
   transform: translateX(-50%);
-  padding: 6px 12px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #5fde5f;
-  font-family: var(--console-font);
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid rgba(95, 222, 95, 0.6);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9) inset;
+  padding: 8px 14px;
+  background: rgba(8, 8, 8, 0.92);
+  border: 1px solid rgba(188, 188, 188, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.95) inset,
+    0 6px 14px rgba(0, 0, 0, 0.55);
   pointer-events: none;
+  transition: opacity 160ms ease-in-out, transform 160ms ease-in-out;
 }
 
 #the-king-audio-gate[hidden] {
   display: none;
+}
+
+.audio-gate-indicator {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #d0f0d0;
+  font-family: var(--console-font);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.audio-gate-lamp {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(208, 240, 208, 0.8);
+  box-shadow: 0 0 4px rgba(138, 255, 138, 0.75);
+  background: radial-gradient(circle at 30% 30%, #b6ff9c, #51b451 75%, #083808);
+  animation: audio-gate-pulse 900ms steps(2, jump-none) infinite;
+}
+
+.audio-gate-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.audio-gate-title {
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  color: #93ff93;
+}
+
+.audio-gate-hint {
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: #cfe7cf;
+  text-transform: none;
+}
+
+@keyframes audio-gate-pulse {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0.4;
+  }
 }
 
 #the-king-blur {
