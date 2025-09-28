@@ -1,4 +1,5 @@
 import { matchesAccessCommandName } from './commands/access.js';
+import { initializeTheKingVideo } from './modules/theKingVideo.js';
 
 const mainTerminal = document.getElementById('main-terminal');
 const mainBuffer = document.getElementById('main-buffer');
@@ -19,6 +20,9 @@ const macHdWindow = document.getElementById('mac-hd-window');
 const theKingWindow = document.getElementById('the-king-window');
 const theKingVideo = document.getElementById('the-king-video');
 const theKingBlur = document.getElementById('the-king-blur');
+const theKingAudioController = theKingVideo
+  ? initializeTheKingVideo(theKingVideo, { gateContainer: theKingWindow })
+  : null;
 const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const env = {
@@ -327,15 +331,7 @@ function finalizeLockdownView() {
     theKingWindow.style.display = 'block';
     bringToFront(theKingWindow);
   }
-  if (theKingVideo) {
-    const playResult = theKingVideo.play();
-    if (playResult && typeof playResult.catch === 'function') {
-      playResult.catch(() => {
-        theKingVideo.muted = true;
-        theKingVideo.play().catch(() => {});
-      });
-    }
-  }
+  theKingAudioController?.resume();
 }
 
 function startLockdown() {
