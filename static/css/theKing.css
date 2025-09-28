@@ -90,20 +90,106 @@ body {
   left: 50%;
   bottom: 32px;
   transform: translateX(-50%);
-  padding: 6px 12px;
-  background: rgba(0, 0, 0, 0.85);
-  color: #5fde5f;
-  font-family: var(--console-font);
-  font-size: 13px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  border: 1px solid rgba(95, 222, 95, 0.6);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9) inset;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   pointer-events: none;
+  font-family: var(--console-font);
+  color: #5fde5f;
+  text-align: left;
 }
 
 #the-king-audio-gate[hidden] {
   display: none;
+}
+
+.audio-gate-shell {
+  background: linear-gradient(180deg, rgba(8, 8, 8, 0.95), rgba(2, 2, 2, 0.95));
+  border: 1px solid rgba(95, 222, 95, 0.4);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.85) inset, 0 6px 18px rgba(0, 0, 0, 0.6);
+  border-radius: 6px;
+  padding: 12px 18px;
+  width: 320px;
+  max-width: calc(100% - 40px);
+}
+
+.audio-gate-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8ffb8f;
+}
+
+.audio-gate-light {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #d6ffd6 0, #5fde5f 60%, #193319 100%);
+  box-shadow: 0 0 6px rgba(95, 222, 95, 0.8);
+  animation: audio-gate-pulse 2.4s ease-in-out infinite;
+}
+
+.audio-gate-body {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.audio-gate-line {
+  opacity: 0.85;
+}
+
+.audio-gate-cursor {
+  width: 8px;
+  height: 16px;
+  background: #5fde5f;
+  animation: audio-gate-cursor 900ms steps(2, jump-none) infinite;
+}
+
+.audio-gate-instructions {
+  margin-top: 12px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  opacity: 0.75;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+
+@keyframes audio-gate-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes audio-gate-cursor {
+  0%,
+  49% {
+    opacity: 0;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
 }
 
 #the-king-blur {
