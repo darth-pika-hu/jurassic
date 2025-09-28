@@ -120,8 +120,10 @@ function initializeTheKingVideo(video) {
 
   const activationEvents = ['pointerdown', 'touchstart', 'keydown'];
   const activationHandlers = new Map();
-  let awaitingActivation = false;
+  let activationCallback = null;
+  let awaitingAudioUnlock = false;
   let pendingPlay = null;
+  let audioRetryTimer = null;
 
   const ensureAttributes = () => {
     video.autoplay = true;
@@ -133,7 +135,15 @@ function initializeTheKingVideo(video) {
     video.setAttribute('webkit-playsinline', '');
   };
 
-  const ensureSound = () => {
+  const configureMuted = () => {
+    video.defaultMuted = true;
+    video.muted = true;
+    if (!video.hasAttribute('muted')) {
+      video.setAttribute('muted', '');
+    }
+  };
+
+  const configureUnmuted = () => {
     video.defaultMuted = false;
     video.muted = false;
     if (video.hasAttribute('muted')) {
@@ -153,23 +163,19 @@ function initializeTheKingVideo(video) {
       window.removeEventListener(eventName, handler, { capture: true });
     });
     activationHandlers.clear();
+    activationCallback = null;
   };
 
-  const requestActivation = () => {
-    if (awaitingActivation) {
+  const requestActivation = callback => {
+    if (activationCallback === callback) {
       return;
     }
-    awaitingActivation = true;
+    clearActivationHandlers();
+    activationCallback = callback;
     activationEvents.forEach(eventName => {
-      if (activationHandlers.has(eventName)) {
-        return;
-      }
       const handler = () => {
-        awaitingActivation = false;
         clearActivationHandlers();
-        playVideo().catch(() => {
-          requestActivation();
-        });
+        callback();
       };
       activationHandlers.set(eventName, handler);
       window.addEventListener(eventName, handler, {
@@ -180,33 +186,91 @@ function initializeTheKingVideo(video) {
     });
   };
 
-  const playVideo = () => {
-    ensureAttributes();
-    ensureSound();
+  const scheduleAudioRecovery = () => {
+    if (!awaitingAudioUnlock) {
+      return;
+    }
+    if (audioRetryTimer !== null) {
+      return;
+    }
+    audioRetryTimer = window.setTimeout(() => {
+      audioRetryTimer = null;
+      if (!awaitingAudioUnlock) {
+        return;
+      }
+      playVideo({
+        mutedFallbackAllowed: false,
+        startMuted: false,
+      }).catch(error => {
+        if (error && error.name !== 'NotAllowedError') {
+          scheduleAudioRecovery();
+        }
+      });
+    }, 250);
+  };
 
+  const playVideoInternal = async ({
+    mutedFallbackAllowed,
+    startMuted,
+  }) => {
+    ensureAttributes();
+
+    if (startMuted) {
+      configureMuted();
+    } else {
+      configureUnmuted();
+    }
+
+    try {
+      await video.play();
+    } catch (error) {
+      if (error && error.name === 'NotAllowedError') {
+        if (!startMuted && mutedFallbackAllowed) {
+          await playVideoInternal({
+            mutedFallbackAllowed: false,
+            startMuted: true,
+          });
+          return;
+        }
+
+        configureMuted();
+        awaitingAudioUnlock = true;
+        requestActivation(() => {
+          playVideo({
+            mutedFallbackAllowed: false,
+            startMuted: false,
+          }).catch(() => {});
+        });
+      }
+      throw error;
+    }
+
+    if (video.muted) {
+      awaitingAudioUnlock = true;
+      scheduleAudioRecovery();
+    } else {
+      awaitingAudioUnlock = false;
+      clearActivationHandlers();
+    }
+  };
+
+  const playVideo = (options = {}) => {
     if (pendingPlay) {
       return pendingPlay;
     }
 
-    const playResult = video.play();
-    if (!playResult || typeof playResult.then !== 'function') {
-      awaitingActivation = false;
-      clearActivationHandlers();
-      return Promise.resolve();
-    }
+    const mergedOptions = {
+      mutedFallbackAllowed: true,
+      startMuted: false,
+      ...options,
+    };
 
-    pendingPlay = playResult
-      .then(() => {
-        pendingPlay = null;
-        awaitingActivation = false;
-        clearActivationHandlers();
-      })
+    pendingPlay = playVideoInternal(mergedOptions)
       .catch(error => {
-        pendingPlay = null;
-        if (error && error.name === 'NotAllowedError') {
-          requestActivation();
-        }
         throw error;
+      })
+      .finally(() => {
+        pendingPlay = null;
       });
 
     return pendingPlay;
@@ -219,6 +283,9 @@ function initializeTheKingVideo(video) {
   const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
       resumePlayback();
+      if (awaitingAudioUnlock) {
+        scheduleAudioRecovery();
+      }
     }
   };
 
@@ -249,10 +316,29 @@ function initializeTheKingVideo(video) {
   video.addEventListener('suspend', handleStall);
   video.addEventListener('waiting', handleStall);
   video.addEventListener('emptied', handleStall);
-  video.addEventListener('playing', ensureSound);
+  video.addEventListener('playing', () => {
+    if (awaitingAudioUnlock) {
+      scheduleAudioRecovery();
+    }
+  });
+  video.addEventListener('timeupdate', () => {
+    if (awaitingAudioUnlock) {
+      scheduleAudioRecovery();
+    }
+  });
+  video.addEventListener('loadeddata', () => {
+    if (awaitingAudioUnlock) {
+      scheduleAudioRecovery();
+    }
+  });
+  video.addEventListener('volumechange', () => {
+    if (!video.muted) {
+      awaitingAudioUnlock = false;
+      clearActivationHandlers();
+    }
+  });
 
   ensureAttributes();
-  ensureSound();
   resumePlayback();
 }
 
