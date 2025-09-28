@@ -124,6 +124,55 @@ function initializeTheKingVideo(video) {
   let awaitingAudioUnlock = false;
   let pendingPlay = null;
   let audioRetryTimer = null;
+  let audioConsent = false;
+
+  const AUDIO_CONSENT_STORAGE_KEY = 'theKing:audio-consent';
+
+  try {
+    audioConsent =
+      window.localStorage.getItem(AUDIO_CONSENT_STORAGE_KEY) === 'granted';
+  } catch (error) {
+    audioConsent = false;
+  }
+
+  const persistAudioConsent = granted => {
+    audioConsent = granted;
+    try {
+      if (granted) {
+        window.localStorage.setItem(AUDIO_CONSENT_STORAGE_KEY, 'granted');
+      } else {
+        window.localStorage.removeItem(AUDIO_CONSENT_STORAGE_KEY);
+      }
+    } catch (error) {
+      // Ignore storage errors (private mode, etc.).
+    }
+  };
+
+  const audioGate = (() => {
+    if (!theKingWindow) {
+      return null;
+    }
+    const gate = document.createElement('div');
+    gate.id = 'the-king-audio-gate';
+    gate.setAttribute('role', 'status');
+    gate.setAttribute('aria-live', 'polite');
+    gate.hidden = true;
+    gate.textContent = 'tap, click, or press any key to enable sound';
+    theKingWindow.appendChild(gate);
+    return gate;
+  })();
+
+  const showAudioGate = () => {
+    if (audioGate) {
+      audioGate.hidden = false;
+    }
+  };
+
+  const hideAudioGate = () => {
+    if (audioGate) {
+      audioGate.hidden = true;
+    }
+  };
 
   const ensureAttributes = () => {
     video.autoplay = true;
@@ -166,6 +215,13 @@ function initializeTheKingVideo(video) {
     activationCallback = null;
   };
 
+  const clearAudioRetryTimer = () => {
+    if (audioRetryTimer !== null) {
+      window.clearTimeout(audioRetryTimer);
+      audioRetryTimer = null;
+    }
+  };
+
   const requestActivation = callback => {
     if (activationCallback === callback) {
       return;
@@ -184,6 +240,34 @@ function initializeTheKingVideo(video) {
         passive: true,
       });
     });
+  };
+
+  const handleAudioUnlocked = () => {
+    awaitingAudioUnlock = false;
+    hideAudioGate();
+    clearAudioRetryTimer();
+    clearActivationHandlers();
+    persistAudioConsent(true);
+  };
+
+  const activationPlay = () => {
+    playVideo({
+      mutedFallbackAllowed: false,
+      startMuted: false,
+    }).catch(error => {
+      if (error && error.name !== 'NotAllowedError') {
+        scheduleAudioRecovery();
+      }
+    });
+  };
+
+  const beginAwaitingAudioUnlock = () => {
+    if (!awaitingAudioUnlock) {
+      awaitingAudioUnlock = true;
+      scheduleAudioRecovery();
+    }
+    showAudioGate();
+    requestActivation(activationPlay);
   };
 
   const scheduleAudioRecovery = () => {
@@ -234,23 +318,15 @@ function initializeTheKingVideo(video) {
         }
 
         configureMuted();
-        awaitingAudioUnlock = true;
-        requestActivation(() => {
-          playVideo({
-            mutedFallbackAllowed: false,
-            startMuted: false,
-          }).catch(() => {});
-        });
+        beginAwaitingAudioUnlock();
       }
       throw error;
     }
 
     if (video.muted) {
-      awaitingAudioUnlock = true;
-      scheduleAudioRecovery();
+      beginAwaitingAudioUnlock();
     } else {
-      awaitingAudioUnlock = false;
-      clearActivationHandlers();
+      handleAudioUnlocked();
     }
   };
 
@@ -261,7 +337,7 @@ function initializeTheKingVideo(video) {
 
     const mergedOptions = {
       mutedFallbackAllowed: true,
-      startMuted: false,
+      startMuted: awaitingAudioUnlock || !audioConsent,
       ...options,
     };
 
@@ -333,8 +409,9 @@ function initializeTheKingVideo(video) {
   });
   video.addEventListener('volumechange', () => {
     if (!video.muted) {
-      awaitingAudioUnlock = false;
-      clearActivationHandlers();
+      handleAudioUnlocked();
+    } else if (awaitingAudioUnlock) {
+      showAudioGate();
     }
   });
 
