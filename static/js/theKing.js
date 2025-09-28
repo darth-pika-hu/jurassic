@@ -113,116 +113,151 @@ if (theKingWindow) {
   setupDraggable(theKingWindow);
 }
 
-function attemptVideoPlayback(video) {
+function initializeTheKingVideo(video) {
   if (!video) {
     return;
   }
 
-  let playbackActivated = false;
-  const gestureHandlers = new Map();
+  const activationEvents = ['pointerdown', 'touchstart', 'keydown'];
+  const activationHandlers = new Map();
+  let awaitingActivation = false;
+  let pendingPlay = null;
+
+  const ensureAttributes = () => {
+    video.autoplay = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.setAttribute('autoplay', '');
+    video.setAttribute('loop', '');
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+  };
 
   const ensureSound = () => {
+    video.defaultMuted = false;
+    video.muted = false;
     if (video.hasAttribute('muted')) {
       video.removeAttribute('muted');
     }
-    video.defaultMuted = false;
-    video.muted = false;
-    video.volume = Math.max(video.volume, 1);
-  };
-
-  const clearGestureHandlers = () => {
-    gestureHandlers.forEach((handler, eventName) => {
-      window.removeEventListener(eventName, handler);
-    });
-    gestureHandlers.clear();
-  };
-
-  const markActivated = () => {
-    playbackActivated = true;
-    clearGestureHandlers();
-  };
-
-  const tryPlay = () => {
-    ensureSound();
-    const playAttempt = video.play();
-    if (!playAttempt || typeof playAttempt.then !== 'function') {
-      markActivated();
-      return Promise.resolve();
+    if (typeof video.volume === 'number' && video.volume < 1) {
+      try {
+        video.volume = 1;
+      } catch (error) {
+        // Ignore platforms that disallow programmatic volume changes.
+      }
     }
-    return playAttempt
-      .then(() => {
-        markActivated();
-      })
-      .catch(error => {
-        if (error && error.name === 'NotAllowedError') {
-          bindGestureRecovery();
-        }
-        throw error;
-      });
   };
 
-  const resumePlayback = () => {
-    tryPlay().catch(() => {});
+  const clearActivationHandlers = () => {
+    activationHandlers.forEach((handler, eventName) => {
+      window.removeEventListener(eventName, handler, { capture: true });
+    });
+    activationHandlers.clear();
   };
 
-  function bindGestureRecovery() {
-    if (playbackActivated) {
+  const requestActivation = () => {
+    if (awaitingActivation) {
       return;
     }
-    ['pointerdown', 'keydown', 'touchstart'].forEach(eventName => {
-      if (gestureHandlers.has(eventName)) {
+    awaitingActivation = true;
+    activationEvents.forEach(eventName => {
+      if (activationHandlers.has(eventName)) {
         return;
       }
       const handler = () => {
-        clearGestureHandlers();
-        tryPlay().catch(() => {
-          bindGestureRecovery();
+        awaitingActivation = false;
+        clearActivationHandlers();
+        playVideo().catch(() => {
+          requestActivation();
         });
       };
-      gestureHandlers.set(eventName, handler);
-      window.addEventListener(eventName, handler, { once: true });
+      activationHandlers.set(eventName, handler);
+      window.addEventListener(eventName, handler, {
+        capture: true,
+        once: true,
+        passive: true,
+      });
     });
-  }
+  };
 
-  function handleVisibilityChange() {
+  const playVideo = () => {
+    ensureAttributes();
+    ensureSound();
+
+    if (pendingPlay) {
+      return pendingPlay;
+    }
+
+    const playResult = video.play();
+    if (!playResult || typeof playResult.then !== 'function') {
+      awaitingActivation = false;
+      clearActivationHandlers();
+      return Promise.resolve();
+    }
+
+    pendingPlay = playResult
+      .then(() => {
+        pendingPlay = null;
+        awaitingActivation = false;
+        clearActivationHandlers();
+      })
+      .catch(error => {
+        pendingPlay = null;
+        if (error && error.name === 'NotAllowedError') {
+          requestActivation();
+        }
+        throw error;
+      });
+
+    return pendingPlay;
+  };
+
+  const resumePlayback = () => {
+    playVideo().catch(() => {});
+  };
+
+  const handleVisibilityChange = () => {
     if (document.visibilityState === 'visible') {
       resumePlayback();
     }
-  }
+  };
 
-  function handlePause() {
+  const handlePause = () => {
     if (video.ended) {
       return;
     }
     resumePlayback();
-  }
+  };
 
-  function handleEnded() {
-    video.currentTime = 0;
+  const handleEnded = () => {
+    if (!video.loop) {
+      video.currentTime = 0;
+    }
     resumePlayback();
-  }
+  };
 
-  function handleStall() {
+  const handleStall = () => {
     if (video.paused || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
       resumePlayback();
     }
-  }
-
-  function handlePlaying() {
-    ensureSound();
-  }
+  };
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
   video.addEventListener('pause', handlePause);
   video.addEventListener('ended', handleEnded);
   video.addEventListener('stalled', handleStall);
   video.addEventListener('suspend', handleStall);
-  video.addEventListener('playing', handlePlaying);
+  video.addEventListener('waiting', handleStall);
+  video.addEventListener('emptied', handleStall);
+  video.addEventListener('playing', ensureSound);
 
+  ensureAttributes();
   ensureSound();
-  tryPlay().catch(() => {
-    bindGestureRecovery();
-  });
+  resumePlayback();
+}
+
+if (theKingVideo) {
+  initializeTheKingVideo(theKingVideo);
 }
 
 window.setTimeout(() => {
@@ -232,16 +267,6 @@ window.setTimeout(() => {
   if (theKingWindow) {
     theKingWindow.style.display = 'block';
     bringToFront(theKingWindow);
-  }
-  if (theKingVideo) {
-    theKingVideo.autoplay = true;
-    theKingVideo.setAttribute('autoplay', '');
-    theKingVideo.loop = true;
-    theKingVideo.setAttribute('loop', '');
-    theKingVideo.playsInline = true;
-    theKingVideo.setAttribute('playsinline', '');
-    theKingVideo.setAttribute('webkit-playsinline', '');
-    attemptVideoPlayback(theKingVideo);
   }
 }, 2500);
 
