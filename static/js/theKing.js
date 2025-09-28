@@ -157,20 +157,97 @@ function initializeTheKingVideo(video) {
     gate.setAttribute('role', 'status');
     gate.setAttribute('aria-live', 'polite');
     gate.hidden = true;
-    gate.textContent = 'tap, click, or press any key to enable sound';
+
+    const srMessage = document.createElement('span');
+    srMessage.className = 'sr-only';
+    srMessage.textContent = 'Audio locked. Tap, click, or press any key to enable sound.';
+    gate.appendChild(srMessage);
+
+    const bezel = document.createElement('div');
+    bezel.className = 'audio-gate-shell';
+    bezel.setAttribute('aria-hidden', 'true');
+    bezel.innerHTML = `
+      <div class="audio-gate-header">
+        <span class="audio-gate-light"></span>
+        <span class="audio-gate-title">Sound Locked</span>
+      </div>
+      <div class="audio-gate-body">
+        <span class="audio-gate-line">Awaiting user input</span>
+        <span class="audio-gate-cursor"></span>
+      </div>
+      <div class="audio-gate-instructions">Tap, click, or press any key to enable sound</div>
+    `;
+    gate.appendChild(bezel);
+
     theKingWindow.appendChild(gate);
     return gate;
   })();
 
+  const AudioContextCtor =
+    window.AudioContext || window.webkitAudioContext || null;
+  let audioContext = null;
+  let audioContextAttempted = false;
+
+  const ensureAudioContext = () => {
+    if (audioContextAttempted) {
+      return audioContext;
+    }
+    audioContextAttempted = true;
+    if (!AudioContextCtor) {
+      return null;
+    }
+    try {
+      audioContext = new AudioContextCtor();
+    } catch (error) {
+      audioContext = null;
+    }
+    return audioContext;
+  };
+
+  const warmupAudioContext = async () => {
+    const context = ensureAudioContext();
+    if (!context) {
+      return;
+    }
+    if (context.state === 'closed') {
+      return;
+    }
+    if (context.state === 'suspended') {
+      try {
+        await context.resume();
+      } catch (error) {
+        return;
+      }
+    }
+
+    if (context.state === 'running' && typeof context.createBuffer === 'function') {
+      try {
+        const buffer = context.createBuffer(1, 1, context.sampleRate);
+        const source = context.createBufferSource();
+        source.buffer = buffer;
+        source.connect(context.destination);
+        source.start(0);
+        source.stop(0);
+        source.disconnect();
+      } catch (error) {
+        // Ignore warmup errors; some platforms block audio graph changes.
+      }
+    }
+  };
+
   const showAudioGate = () => {
     if (audioGate) {
       audioGate.hidden = false;
+      audioGate.removeAttribute('hidden');
     }
   };
 
   const hideAudioGate = () => {
     if (audioGate) {
       audioGate.hidden = true;
+      if (!audioGate.hasAttribute('hidden')) {
+        audioGate.setAttribute('hidden', '');
+      }
     }
   };
 
@@ -268,6 +345,7 @@ function initializeTheKingVideo(video) {
     }
     showAudioGate();
     requestActivation(activationPlay);
+    warmupAudioContext();
   };
 
   const scheduleAudioRecovery = () => {
@@ -306,6 +384,7 @@ function initializeTheKingVideo(video) {
     }
 
     try {
+      await warmupAudioContext();
       await video.play();
     } catch (error) {
       if (error && error.name === 'NotAllowedError') {
@@ -417,6 +496,14 @@ function initializeTheKingVideo(video) {
 
   ensureAttributes();
   resumePlayback();
+
+  if (!audioConsent) {
+    window.requestAnimationFrame(() => {
+      if (video.muted || video.paused || awaitingAudioUnlock) {
+        beginAwaitingAudioUnlock();
+      }
+    });
+  }
 }
 
 if (theKingVideo) {
