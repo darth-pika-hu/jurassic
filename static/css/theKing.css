@@ -85,6 +85,29 @@ body {
   max-width: 100%;
 }
 
+#the-king-sound-gate {
+  position: absolute;
+  bottom: 42px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid #5fde5f;
+  color: #5fde5f;
+  font-size: 14px;
+  letter-spacing: 0.05em;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 150ms ease-in-out, visibility 150ms ease-in-out;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+#the-king-sound-gate.is-visible {
+  opacity: 1;
+  visibility: visible;
+}
+
 #the-king-blur {
   background-image: url('/img/theKingBlur.jpg');
   width: 600px;

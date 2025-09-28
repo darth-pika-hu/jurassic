@@ -4,6 +4,8 @@ const theKingVideo = document.getElementById('the-king-video');
 const theKingBlur = document.getElementById('the-king-blur');
 const appleDesktop = document.getElementById('apple-desktop');
 
+const AUDIO_CONSENT_STORAGE_KEY = 'theKingAudioConsent';
+
 const state = {
   maxIndex: 1,
 };
@@ -124,6 +126,29 @@ function initializeTheKingVideo(video) {
   let awaitingAudioUnlock = false;
   let pendingPlay = null;
   let audioRetryTimer = null;
+  const hasStoredConsent = (() => {
+    try {
+      return window.localStorage.getItem(AUDIO_CONSENT_STORAGE_KEY) === 'granted';
+    } catch (error) {
+      return false;
+    }
+  })();
+  let preferMutedStart = !hasStoredConsent;
+
+  const soundGate = (() => {
+    if (!theKingWindow) {
+      return null;
+    }
+    let gate = theKingWindow.querySelector('#the-king-sound-gate');
+    if (gate) {
+      return gate;
+    }
+    gate = document.createElement('div');
+    gate.id = 'the-king-sound-gate';
+    gate.textContent = 'Audio locked. Tap, click, or press any key to enable sound.';
+    theKingWindow.appendChild(gate);
+    return gate;
+  })();
 
   const ensureAttributes = () => {
     video.autoplay = true;
@@ -141,6 +166,7 @@ function initializeTheKingVideo(video) {
     if (!video.hasAttribute('muted')) {
       video.setAttribute('muted', '');
     }
+    preferMutedStart = true;
   };
 
   const configureUnmuted = () => {
@@ -156,6 +182,37 @@ function initializeTheKingVideo(video) {
         // Ignore platforms that disallow programmatic volume changes.
       }
     }
+  };
+
+  const showSoundGate = () => {
+    if (soundGate) {
+      soundGate.classList.add('is-visible');
+    }
+  };
+
+  const hideSoundGate = () => {
+    if (soundGate) {
+      soundGate.classList.remove('is-visible');
+    }
+  };
+
+  const persistAudioConsent = () => {
+    try {
+      window.localStorage.setItem(AUDIO_CONSENT_STORAGE_KEY, 'granted');
+    } catch (error) {
+      // Ignore storage access issues (private mode, etc.).
+    }
+  };
+
+  const handleAudioUnlocked = () => {
+    if (video.muted) {
+      return;
+    }
+    awaitingAudioUnlock = false;
+    preferMutedStart = false;
+    hideSoundGate();
+    clearActivationHandlers();
+    persistAudioConsent();
   };
 
   const clearActivationHandlers = () => {
@@ -186,6 +243,14 @@ function initializeTheKingVideo(video) {
     });
   };
 
+  function enterAwaitingAudioState() {
+    if (!awaitingAudioUnlock) {
+      awaitingAudioUnlock = true;
+    }
+    showSoundGate();
+    requestActivation(unlockAudio);
+  }
+
   const scheduleAudioRecovery = () => {
     if (!awaitingAudioUnlock) {
       return;
@@ -209,6 +274,18 @@ function initializeTheKingVideo(video) {
     }, 250);
   };
 
+  function unlockAudio() {
+    configureUnmuted();
+    playVideo({
+      mutedFallbackAllowed: false,
+      startMuted: false,
+    }).catch(error => {
+      if (error && error.name !== 'NotAllowedError') {
+        scheduleAudioRecovery();
+      }
+    });
+  }
+
   const playVideoInternal = async ({
     mutedFallbackAllowed,
     startMuted,
@@ -217,6 +294,7 @@ function initializeTheKingVideo(video) {
 
     if (startMuted) {
       configureMuted();
+      enterAwaitingAudioState();
     } else {
       configureUnmuted();
     }
@@ -226,6 +304,7 @@ function initializeTheKingVideo(video) {
     } catch (error) {
       if (error && error.name === 'NotAllowedError') {
         if (!startMuted && mutedFallbackAllowed) {
+          preferMutedStart = true;
           await playVideoInternal({
             mutedFallbackAllowed: false,
             startMuted: true,
@@ -234,23 +313,16 @@ function initializeTheKingVideo(video) {
         }
 
         configureMuted();
-        awaitingAudioUnlock = true;
-        requestActivation(() => {
-          playVideo({
-            mutedFallbackAllowed: false,
-            startMuted: false,
-          }).catch(() => {});
-        });
+        enterAwaitingAudioState();
       }
       throw error;
     }
 
     if (video.muted) {
-      awaitingAudioUnlock = true;
+      enterAwaitingAudioState();
       scheduleAudioRecovery();
     } else {
-      awaitingAudioUnlock = false;
-      clearActivationHandlers();
+      handleAudioUnlocked();
     }
   };
 
@@ -277,7 +349,9 @@ function initializeTheKingVideo(video) {
   };
 
   const resumePlayback = () => {
-    playVideo().catch(() => {});
+    playVideo({
+      startMuted: preferMutedStart,
+    }).catch(() => {});
   };
 
   const handleVisibilityChange = () => {
@@ -333,8 +407,10 @@ function initializeTheKingVideo(video) {
   });
   video.addEventListener('volumechange', () => {
     if (!video.muted) {
-      awaitingAudioUnlock = false;
-      clearActivationHandlers();
+      handleAudioUnlocked();
+    } else if (!awaitingAudioUnlock) {
+      enterAwaitingAudioState();
+      scheduleAudioRecovery();
     }
   });
 
