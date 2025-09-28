@@ -118,9 +118,17 @@ function attemptVideoPlayback(video) {
     return;
   }
 
-  let recovered = false;
-  let restoreTimer;
+  let playbackActivated = false;
   const gestureHandlers = new Map();
+
+  const ensureSound = () => {
+    if (video.hasAttribute('muted')) {
+      video.removeAttribute('muted');
+    }
+    video.defaultMuted = false;
+    video.muted = false;
+    video.volume = Math.max(video.volume, 1);
+  };
 
   const clearGestureHandlers = () => {
     gestureHandlers.forEach((handler, eventName) => {
@@ -129,123 +137,56 @@ function attemptVideoPlayback(video) {
     gestureHandlers.clear();
   };
 
-  const markRecovered = () => {
-    if (recovered) {
-      return;
-    }
-    recovered = true;
-    if (restoreTimer) {
-      window.clearInterval(restoreTimer);
-      restoreTimer = undefined;
-    }
+  const markActivated = () => {
+    playbackActivated = true;
     clearGestureHandlers();
-    video.muted = false;
-    video.defaultMuted = false;
-    video.volume = 1;
-    if (video.hasAttribute('muted')) {
-      video.removeAttribute('muted');
-    }
-    document.removeEventListener('visibilitychange', handleVisibilityChange);
-    video.removeEventListener('timeupdate', handleProgressAttempt);
-    video.removeEventListener('playing', handlePlaying);
   };
 
   const tryPlay = () => {
-    const result = video.play();
-    if (!result || typeof result.then !== 'function') {
+    ensureSound();
+    const playAttempt = video.play();
+    if (!playAttempt || typeof playAttempt.then !== 'function') {
+      markActivated();
       return Promise.resolve();
     }
-    return result;
-  };
-
-  const playUnmuted = () => {
-    video.muted = false;
-    video.volume = Math.max(video.volume, 1);
-    return tryPlay().then(() => {
-      if (!video.muted) {
-        markRecovered();
-      }
-    });
-  };
-
-  const playMuted = () => {
-    if (!video.muted) {
-      video.muted = true;
-    }
-    if (!video.defaultMuted) {
-      video.defaultMuted = true;
-    }
-    if (!video.hasAttribute('muted')) {
-      video.setAttribute('muted', '');
-    }
-    return tryPlay();
-  };
-
-  const scheduleAutoRestore = () => {
-    if (restoreTimer || recovered) {
-      return;
-    }
-    restoreTimer = window.setInterval(() => {
-      if (video.paused) {
-        playMuted().catch(() => {});
-        return;
-      }
-      if (!video.muted) {
-        return;
-      }
-      playUnmuted().catch(() => {
-        video.muted = true;
+    return playAttempt
+      .then(() => {
+        markActivated();
+      })
+      .catch(error => {
+        if (error && error.name === 'NotAllowedError') {
+          bindGestureRecovery();
+        }
+        throw error;
       });
-    }, 1500);
   };
 
-  const onUserGesture = () => {
-    if (recovered) {
-      return;
-    }
-    clearGestureHandlers();
-    playUnmuted().catch(() => {
-      video.muted = true;
-      scheduleAutoRestore();
-      bindGestureRecovery();
-    });
+  const resumePlayback = () => {
+    tryPlay().catch(() => {});
   };
 
   function bindGestureRecovery() {
-    if (recovered) {
+    if (playbackActivated) {
       return;
     }
-    ['pointerdown', 'keydown'].forEach(eventName => {
+    ['pointerdown', 'keydown', 'touchstart'].forEach(eventName => {
       if (gestureHandlers.has(eventName)) {
         return;
       }
       const handler = () => {
-        onUserGesture();
+        clearGestureHandlers();
+        tryPlay().catch(() => {
+          bindGestureRecovery();
+        });
       };
       gestureHandlers.set(eventName, handler);
-      window.addEventListener(eventName, handler);
+      window.addEventListener(eventName, handler, { once: true });
     });
   }
 
   function handleVisibilityChange() {
-    if (document.visibilityState === 'visible' && !recovered) {
-      playUnmuted().catch(() => {
-        video.muted = true;
-      });
-    }
-  }
-
-  function handleProgressAttempt() {
-    if (!recovered && video.currentTime > 0.25) {
-      playUnmuted().catch(() => {
-        video.muted = true;
-      });
-    }
-  }
-
-  function handlePlaying() {
-    if (!video.muted) {
-      markRecovered();
+    if (document.visibilityState === 'visible') {
+      resumePlayback();
     }
   }
 
@@ -253,40 +194,35 @@ function attemptVideoPlayback(video) {
     if (video.ended) {
       return;
     }
-    const resume = video.muted ? playMuted() : playUnmuted();
-    resume.catch(() => {
-      video.muted = true;
-      scheduleAutoRestore();
-    });
+    resumePlayback();
   }
 
   function handleEnded() {
     video.currentTime = 0;
-    const resume = video.muted ? playMuted() : playUnmuted();
-    resume.catch(() => {
-      video.muted = true;
-      scheduleAutoRestore();
-    });
+    resumePlayback();
+  }
+
+  function handleStall() {
+    if (video.paused || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+      resumePlayback();
+    }
+  }
+
+  function handlePlaying() {
+    ensureSound();
   }
 
   document.addEventListener('visibilitychange', handleVisibilityChange);
-  video.addEventListener('timeupdate', handleProgressAttempt);
-  video.addEventListener('playing', handlePlaying);
   video.addEventListener('pause', handlePause);
   video.addEventListener('ended', handleEnded);
+  video.addEventListener('stalled', handleStall);
+  video.addEventListener('suspend', handleStall);
+  video.addEventListener('playing', handlePlaying);
 
-  playUnmuted()
-    .catch(() => {
-      playMuted()
-        .then(() => {
-          scheduleAutoRestore();
-          bindGestureRecovery();
-        })
-        .catch(() => {
-          scheduleAutoRestore();
-          bindGestureRecovery();
-        });
-    });
+  ensureSound();
+  tryPlay().catch(() => {
+    bindGestureRecovery();
+  });
 }
 
 window.setTimeout(() => {
@@ -305,9 +241,6 @@ window.setTimeout(() => {
     theKingVideo.playsInline = true;
     theKingVideo.setAttribute('playsinline', '');
     theKingVideo.setAttribute('webkit-playsinline', '');
-    theKingVideo.defaultMuted = true;
-    theKingVideo.muted = true;
-    theKingVideo.setAttribute('muted', '');
     attemptVideoPlayback(theKingVideo);
   }
 }, 2500);
