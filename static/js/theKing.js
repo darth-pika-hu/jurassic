@@ -140,7 +140,11 @@ function attemptVideoPlayback(video) {
     }
     clearGestureHandlers();
     video.muted = false;
+    video.defaultMuted = false;
     video.volume = 1;
+    if (video.hasAttribute('muted')) {
+      video.removeAttribute('muted');
+    }
     document.removeEventListener('visibilitychange', handleVisibilityChange);
     video.removeEventListener('timeupdate', handleProgressAttempt);
     video.removeEventListener('playing', handlePlaying);
@@ -165,7 +169,15 @@ function attemptVideoPlayback(video) {
   };
 
   const playMuted = () => {
-    video.muted = true;
+    if (!video.muted) {
+      video.muted = true;
+    }
+    if (!video.defaultMuted) {
+      video.defaultMuted = true;
+    }
+    if (!video.hasAttribute('muted')) {
+      video.setAttribute('muted', '');
+    }
     return tryPlay();
   };
 
@@ -175,6 +187,10 @@ function attemptVideoPlayback(video) {
     }
     restoreTimer = window.setInterval(() => {
       if (video.paused) {
+        playMuted().catch(() => {});
+        return;
+      }
+      if (!video.muted) {
         return;
       }
       playUnmuted().catch(() => {
@@ -233,9 +249,31 @@ function attemptVideoPlayback(video) {
     }
   }
 
+  function handlePause() {
+    if (video.ended) {
+      return;
+    }
+    const resume = video.muted ? playMuted() : playUnmuted();
+    resume.catch(() => {
+      video.muted = true;
+      scheduleAutoRestore();
+    });
+  }
+
+  function handleEnded() {
+    video.currentTime = 0;
+    const resume = video.muted ? playMuted() : playUnmuted();
+    resume.catch(() => {
+      video.muted = true;
+      scheduleAutoRestore();
+    });
+  }
+
   document.addEventListener('visibilitychange', handleVisibilityChange);
   video.addEventListener('timeupdate', handleProgressAttempt);
   video.addEventListener('playing', handlePlaying);
+  video.addEventListener('pause', handlePause);
+  video.addEventListener('ended', handleEnded);
 
   playUnmuted()
     .catch(() => {
@@ -262,6 +300,14 @@ window.setTimeout(() => {
   if (theKingVideo) {
     theKingVideo.autoplay = true;
     theKingVideo.setAttribute('autoplay', '');
+    theKingVideo.loop = true;
+    theKingVideo.setAttribute('loop', '');
+    theKingVideo.playsInline = true;
+    theKingVideo.setAttribute('playsinline', '');
+    theKingVideo.setAttribute('webkit-playsinline', '');
+    theKingVideo.defaultMuted = true;
+    theKingVideo.muted = true;
+    theKingVideo.setAttribute('muted', '');
     attemptVideoPlayback(theKingVideo);
   }
 }, 2500);
