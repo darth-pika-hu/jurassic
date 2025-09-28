@@ -85,12 +85,15 @@ body {
   max-width: 100%;
 }
 
-#the-king-audio-gate {
+.mac-audio-indicator {
   position: absolute;
   left: 50%;
-  bottom: 32px;
+  bottom: 34px;
   transform: translateX(-50%);
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
   background: rgba(0, 0, 0, 0.85);
   color: #5fde5f;
   font-family: var(--console-font);
@@ -98,12 +101,34 @@ body {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   border: 1px solid rgba(95, 222, 95, 0.6);
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9) inset;
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.9) inset,
+    0 6px 18px rgba(0, 0, 0, 0.45);
   pointer-events: none;
+  user-select: none;
 }
 
-#the-king-audio-gate[hidden] {
+.mac-audio-indicator::before {
+  content: '●';
+  font-size: 10px;
+  line-height: 1;
+  animation: mac-audio-indicator-pulse 1.2s steps(2, jump-none) infinite;
+  opacity: 0.6;
+}
+
+.mac-audio-indicator[hidden] {
   display: none;
+}
+
+@keyframes mac-audio-indicator-pulse {
+  0%,
+  49% {
+    opacity: 0.25;
+  }
+  50%,
+  100% {
+    opacity: 1;
+  }
 }
 
 #the-king-blur {
