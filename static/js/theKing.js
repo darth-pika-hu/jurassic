@@ -157,9 +157,87 @@ function initializeTheKingVideo(video) {
     gate.setAttribute('role', 'status');
     gate.setAttribute('aria-live', 'polite');
     gate.hidden = true;
-    gate.textContent = 'tap, click, or press any key to enable sound';
+
+    const chrome = document.createElement('div');
+    chrome.className = 'audio-gate-indicator';
+
+    const lamp = document.createElement('span');
+    lamp.className = 'audio-gate-lamp';
+    lamp.setAttribute('aria-hidden', 'true');
+
+    const textContainer = document.createElement('div');
+    textContainer.className = 'audio-gate-text';
+
+    const title = document.createElement('div');
+    title.className = 'audio-gate-title';
+    title.textContent = 'Sound Locked';
+
+    const hint = document.createElement('div');
+    hint.className = 'audio-gate-hint';
+    hint.textContent = 'Tap, click, or press any key to enable sound.';
+
+    textContainer.appendChild(title);
+    textContainer.appendChild(hint);
+
+    chrome.appendChild(lamp);
+    chrome.appendChild(textContainer);
+
+    gate.appendChild(chrome);
     theKingWindow.appendChild(gate);
     return gate;
+  })();
+
+  const attemptProgrammaticAudioUnlock = (() => {
+    let attempts = 0;
+    let context = null;
+
+    return () => {
+      const AudioContextCtor =
+        window.AudioContext || window.webkitAudioContext || null;
+      if (!AudioContextCtor) {
+        return Promise.resolve(false);
+      }
+      if (attempts > 4) {
+        return Promise.resolve(false);
+      }
+      attempts += 1;
+
+      try {
+        if (!context) {
+          context = new AudioContextCtor();
+        }
+      } catch (error) {
+        return Promise.resolve(false);
+      }
+
+      const ctx = context;
+      const resume =
+        ctx.state === 'suspended' ? ctx.resume() : Promise.resolve();
+
+      return resume
+        .then(() => {
+          if (ctx.state !== 'running') {
+            return false;
+          }
+          try {
+            const buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+            const source = ctx.createBufferSource();
+            source.buffer = buffer;
+            source.connect(ctx.destination);
+            source.start(0);
+            source.stop(0);
+            source.disconnect();
+            if (typeof ctx.close === 'function') {
+              ctx.close().catch(() => {});
+              context = null;
+            }
+            return true;
+          } catch (error) {
+            return false;
+          }
+        })
+        .catch(() => false);
+    };
   })();
 
   const showAudioGate = () => {
@@ -305,10 +383,15 @@ function initializeTheKingVideo(video) {
       configureUnmuted();
     }
 
+    if (!startMuted) {
+      attemptProgrammaticAudioUnlock().catch(() => {});
+    }
+
     try {
       await video.play();
     } catch (error) {
       if (error && error.name === 'NotAllowedError') {
+        attemptProgrammaticAudioUnlock().catch(() => {});
         if (!startMuted && mutedFallbackAllowed) {
           await playVideoInternal({
             mutedFallbackAllowed: false,
